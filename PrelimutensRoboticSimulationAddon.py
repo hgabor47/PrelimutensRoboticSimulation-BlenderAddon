@@ -1,0 +1,684 @@
+#########
+#
+# Prelimutens Robotic
+#
+####
+
+bl_info = {
+    "name": "Prelimutens Robotic",
+    "author": "Gabor Horvath",
+    "version": (0, 21),
+    "blender": (2, 80, 0),
+    "location": "View3D > Pre.Rob ",
+    "description": "Robotic simulation interface between Arduino and Blender systems",
+    "warning": "",
+    "category": "Mesh"}
+
+
+import requests
+import threading
+import functools
+import queue
+import math
+
+import ast
+import json
+import time
+from collections import namedtuple
+
+import bpy
+from bpy.app.handlers import persistent
+from bpy.props import (BoolProperty,EnumProperty,
+                       FloatProperty,
+                       FloatVectorProperty,
+                       IntProperty,
+                       PointerProperty,
+                       StringProperty)
+
+ipdefault='192.168.137.10'
+killthread=False  #thread
+helperindex=1
+execution_queue = queue.Queue()
+northpole=0
+compass=0
+
+def ShowMessageBox(message = "", title = "Message Box", icon = 'INFO'):
+
+    def draw(self, context):
+        self.layout.scale_x=2
+        self.layout.label(text=message)
+        print(self.layout)
+
+    bpy.context.window_manager.popup_menu(draw, title = title, icon = icon)
+
+
+def diffangle(ob1,ob2):
+    axis = ob1.matrix_world.to_quaternion()
+    q = ob2.matrix_world.to_quaternion()
+    rotdif = axis.rotation_difference(q)
+    #print(rotdif)
+    return math.degrees(rotdif.to_euler()[2])   #Z axes diff
+
+def thread_function(name):
+    global killthread
+    killthread=False
+    maxi=100000
+    scene = bpy.data.scenes["Scene"]
+    ip=scene.prelisim_ip
+    ips='http://'+ip+':82/values'
+    print(ips)
+    while (maxi>0) and (not killthread):
+        time.sleep(0.1) 
+        maxi-=1
+        
+        payload={}
+        for item in bpy.types.Scene.prelisim:
+            type=item["type"]
+            name=item["name"]
+            if name[0]=='I':
+                if type == "boolean":          
+                    exec('bpy.types.Scene.prelisimv=scene.{0}'.format(item["var_name"]))      
+                    if bpy.types.Scene.prelisimv:
+                        payload[item["name"]]=1
+                    else:
+                        payload[item["name"]]=0
+                if type == "string":          
+                    exec('payload[item["name"]]=scene.{0}'.format(item["var_name"]))      
+                if type == "float":   
+                    s='bpy.types.Scene.prelisimv=round(scene.{0},4)'.format(item["var_name"])
+                    exec(s)   
+                    #print(bpy.types.Scene.prelisimv)
+                    payload[item["name"]]=bpy.types.Scene.prelisimv
+                #TODO !!! folytatni kell a többi típussal   
+                    
+                
+        print(payload)
+        r = requests.get(ips,params=payload)
+        y = json.loads(r.text)
+        print(y)
+        
+        #logging.info(y["motL"])
+        #bpy.data.objects["E.1M"].rigid_body_constraint.motor_ang_target_velocity=y["motL"]*speed
+        #bpy.data.objects["E.2M"].rigid_body_constraint.motor_ang_target_velocity=y["motR"]*speed
+        for item in bpy.types.Scene.prelisim:
+            type=item["type"]
+            name=item["name"]
+            if name[0]=='O':
+                try:
+                    exec('bpy.types.Scene.prelisimv=y["'+name+'"]')
+                    exec('scene.{0}=bpy.types.Scene.prelisimv'.format(item["var_name"]))
+                except:
+                    print(name)
+                
+        
+    print('Thread End')
+
+def clearcache(context):  
+    v=''
+    try:
+        v=context.selected_objects[0]
+    except:
+        print('NoSelectedObj')
+    bpy.ops.mesh.primitive_cube_add(size=2, enter_editmode=False, location=(1000, 0, 0))
+    bpy.ops.rigidbody.object_add()
+    bpy.ops.object.delete(use_global=False)
+    if v:
+        v.select_set(True)
+        bpy.context.view_layer.objects.active=v
+    bpy.ops.ptcache.free_bake_all()
+
+
+def play(context):
+    if not context.screen.is_animation_playing:
+        bpy.ops.screen.animation_play()   
+
+class ModalTimerOperator(bpy.types.Operator):
+    """Operator which runs its self from a timer"""
+    bl_idname = "wm.modal_timer_operator"
+    bl_label = "Modal Timer Operator"
+    
+    idx=0
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            self.idx+=1
+            #print(self.idx)
+            if bpy.context.scene.frame_current>5:
+                bpy.context.scene.frame_current=1
+            #if bpy.context.scene.frame_current>2 and context.scene.frame_start==1:                
+                if context.screen.is_animation_playing:
+                    bpy.ops.screen.animation_play()
+                self.cancel(context)
+                return {'FINISHED'}
+            if bpy.context.scene.frame_current>3:
+                if context.scene.frame_start!=1: 
+                    context.scene.frame_start=1  
+                    context.scene.rigidbody_world.solver_iterations=15
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        wm = context.window_manager
+        try:
+            bpy.types.Scene.prelisim_timer_stop
+        except:
+            bpy.types.Scene.prelisim_timer_stop=None                    
+        if bpy.types.Scene.prelisim_timer_stop==None:
+            bpy.types.Scene.prelisim_timer_stop = wm.event_timer_add(0.01, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        wm = context.window_manager
+        if bpy.types.Scene.prelisim_timer_stop!=None:
+            wm.event_timer_remove(bpy.types.Scene.prelisim_timer_stop)
+        bpy.types.Scene.prelisim_timer_stop=None
+        
+
+def stop(context):
+    bpy.context.scene.frame_current=1
+    play(context)
+    bpy.ops.wm.modal_timer_operator()    
+    
+def setInfinity(context): 
+    context.scene.frame_current=1
+    context.scene.frame_start=1
+    context.scene.rigidbody_world.solver_iterations=15
+    context.scene.frame_current=2
+    context.scene.frame_current=3
+    context.scene.frame_start=2
+    context.scene.rigidbody_world.solver_iterations=14
+    play(context)
+
+
+def add_variable():
+    var = "prelisim_" + str(bpy.context.scene.prelisim_count_total).zfill(4)
+    bpy.types.Scene.prelisim_count_total +=1
+    return var
+
+class prelisim_stop(bpy.types.Operator):
+    bl_idname = "scene.prelisim_stop"
+    bl_label = "Stop Simulation"
+
+    def execute(self, context):
+        global killthread
+        killthread=True
+        #ShowMessageBox("Simulation stopped!") 
+        stop(context)     
+        return {'FINISHED'}
+
+
+
+# {"V1": ["1.56","4.67",9.84],"Power":"6.6", "Style":"1", "Styleaa":"perrito", "Enabled": "true" }
+# {"V1": [1.56,4.67,9.84],"Power":"6.6", "Style":"1", "Enabled": true }
+# { "Power":"6.6", "Style":"1", "Enabled" : "true" }
+class prelisim_generator(bpy.types.Operator):
+    bl_idname = "scene.prelisim_generator"
+    bl_label = "Connect"
+
+    def execute(self, context):
+        bpy.types.Scene.prelisim_count_total =0
+        
+        if context.scene.prelisim_ip == "":
+            ShowMessageBox("No IP address for Arduino!") 
+            return {'FINISHED'}
+        try:
+            r = requests.get('http://'+context.scene.prelisim_ip+':82/params')
+            if r.status_code!=200:
+                ShowMessageBox("Bad answer from Arduino!") 
+                return {'CANCELLED'}
+        except:
+            ShowMessageBox("Network error!") 
+            return {'CANCELLED'}
+        
+        data = r.text
+        print(r.text)
+        #data = '{ "title" : "string","address" : "string","V1" : "vector","V2" : "vector","V3" : "vector","Power":"float", "Style":{"0":"XYZ","1":"Red","2":"Fruit"}, "Enabled": "boolean" }'
+        script = json.loads(data)
+
+        jkeys = []
+        jvalues = []
+        list_var_name = []
+        ldic = locals()
+        
+        for k, v in zip(script.keys(), script.values()):
+            if type(v) == str:
+                s = v.lower()
+                if s == "string" or s == "vector" or s == "float" or s == "boolean":
+                    jkeys.append(k)
+                    jvalues.append(v)
+                    list_var_name.append(add_variable())                      
+            elif type(v) == dict:
+                jkeys.append(k)
+                jvalues.append(v)
+                list_var_name.append(add_variable())
+        bpy.types.Scene.prelisim=[]
+        
+        for var_name, var, value in zip(list_var_name, jkeys, jvalues):
+            if type(value) == str:
+                if value == "boolean":
+                    exec("bpy.types.Scene.{0}=BoolProperty(name='{1}')".format(var_name, var))  
+                    print(var_name)
+
+                elif value == "vector":
+                    t = (0.0, 0.0, 0.0)
+                    exec("bpy.types.Scene.{0}=FloatVectorProperty(name='{1}', default={2})".format(var_name, var,t))  
+
+                elif value == "float":
+                    exec("bpy.types.Scene.{0}=FloatProperty(name='{1}')".format(var_name, var))  
+                    
+
+                elif value == "string":
+                    exec("bpy.types.Scene.{0}=StringProperty(name='{1}')".format(var_name, var))  
+
+                bpy.types.Scene.prelisim.append({"var_name":var_name,"name":var,"type":value})
+
+            elif type(value) == dict:
+                l = []
+                for v, k in zip(value.keys(), value.values()):
+                    l.append((v, k, ""))
+                exec("bpy.types.Scene.{0}=EnumProperty(items={1}, name='{2}')".format(var_name, l, var))
+        bpy.ops.wm.prelisim_timer_operator()    
+        return {'FINISHED'}
+
+
+class prelisim_start(bpy.types.Operator):
+    bl_idname="scene.prelisim_start"
+    bl_label="Start Simulation"
+    
+
+    def execute(self,context):
+        global x
+        print("Start")
+        
+        context.scene.frame_current = 1
+        try:
+            r = requests.get('http://'+context.scene.prelisim_ip+':82/values')            
+            if r.status_code!=200:
+                ShowMessageBox("Bad answer from Arduino!") 
+                return {'CANCELLED'}
+            #clearcache(context)
+            setInfinity(context)            
+            x = threading.Thread(target=thread_function, args=(1,))
+            x.start()
+        except:
+            ShowMessageBox("Please check it: need least one rigid body and Arduino connected to network") 
+            print('No rigid bodies or http error')   
+                             
+        print('OK')
+        return {'FINISHED'}
+
+def recurLayerCollection(layerColl, collName):
+    found = None
+    if (layerColl.name == collName):
+        return layerColl
+    for layer in layerColl.children:
+        found = recurLayerCollection(layer, collName)
+        if found:
+            return found
+            
+def find_collection(context, item):
+    collections = item.users_collection
+    if len(collections) > 0:
+        return collections[0]
+    return context.scene.collection
+
+def make_collection(collection_name, parent_collection):
+    if collection_name in bpy.data.collections: # Does the collection already exist?
+        return bpy.data.collections[collection_name]
+    else:
+        new_collection = bpy.data.collections.new(collection_name)
+        parent_collection.children.link(new_collection) # Add the new collection under a parent
+        return new_collection
+
+#can exit with bpy.types.Scene.prelisim_timer_exit
+class PrelisimTimerOperator(bpy.types.Operator):
+    """Prelimutens Robotic Heart Tick"""
+    bl_idname = "wm.prelisim_timer_operator"
+    bl_label = "Prelisim Timer Operator"
+    _timer = None
+    def modal(self, context, event):
+        try:
+            bpy.types.Scene.prelisim_timer_exit
+        except:
+            bpy.types.Scene.prelisim_timer_exit=False
+        if bpy.types.Scene.prelisim_timer_exit:
+            self.cancel(context)
+            return {'FINISHED'}    
+        if event.type == 'TIMER':
+            try:
+                scene = bpy.data.scenes["Scene"]                
+                euler=scene.prelisim_compass.matrix_local.decompose()[1].to_euler()
+                euler[2]=euler[2]*(180/math.pi);
+                #print(euler[2])
+                scene.prelisim_compassdir=euler[2]
+            except:
+                euler=0
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        wm = context.window_manager
+        try:
+            bpy.types.Scene.prelisim_timer
+        except:
+            bpy.types.Scene.prelisim_timer=None
+        if bpy.types.Scene.prelisim_timer==None:
+            bpy.types.Scene.prelisim_timer = wm.event_timer_add(time_step=0.1, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):        
+        wm = context.window_manager
+        if bpy.types.Scene.prelisim_timer!=None:
+            wm.event_timer_remove(bpy.types.Scene.prelisim_timer)
+        bpy.types.Scene.prelisim_timer=None
+
+class prelisim_addhelper(bpy.types.Operator):
+    bl_idname="scene.prelisim_addhelper"
+    bl_label="Add helper to Scene"    
+
+    def execute(self,context):
+        global helperindex
+        global northpole
+        global compass
+        id=int(bpy.data.scenes['Scene'].prelisim_helper)
+        if id==0: #CollisionSwitch
+######COLLISIONSWITCH
+            helperindex+=1
+            layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
+            bpy.context.view_layer.active_layer_collection = layerColl
+            
+            #bpy.ops.object.select_all(action='SELECT')
+            #bpy.ops.object.delete(use_global=True)
+            bpy.ops.mesh.primitive_cube_add(size=2, enter_editmode=False, location=(0, 0, 0))
+            #bpy.ops.object.move_to_collection(collection_index=0, is_new=True, new_collection_name="switch1")
+            context.scene.cursor.location = [1,1,0]
+            bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
+            bpy.ops.object.location_clear(clear_delta=False)
+            context.object.name = "base"
+            base=bpy.data.objects[context.object.name]
+            bpy.ops.rigidbody.object_add()
+            context.object.rigid_body.type = 'PASSIVE'
+            context.object.rigid_body.kinematic = True
+            
+            #layer=bpy.data.collections['switch1']
+
+
+            bpy.ops.mesh.primitive_cube_add(size=2, enter_editmode=False, location=(0, 0, 0))
+            #bpy.ops.object.move_to_collection(collection_index=0)
+            bpy.context.scene.cursor.location = [-1,1,0]
+            bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
+            bpy.ops.object.location_clear(clear_delta=False)
+            bpy.context.object.name = "arm"
+            arm=bpy.data.objects[context.object.name]
+            bpy.ops.rigidbody.object_add()
+            bpy.context.object.rigid_body.mass = 0.1
+            bpy.context.object.rigid_body.mesh_source = 'BASE'
+            bpy.context.object.rigid_body.friction = 1
+            bpy.context.object.rigid_body.use_margin = True
+            bpy.context.object.rigid_body.collision_margin = 0
+            bpy.ops.transform.resize(value=(2, 1, 1), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=True, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False)
+            
+
+
+            bpy.ops.object.empty_add(type='SINGLE_ARROW', location=(0,0 ,0))
+            #bpy.ops.object.move_to_collection(collection_index=1)  
+            context.object.empty_display_size = 2
+            context.object.name = "E.1"
+            e1=bpy.data.objects[context.object.name]
+            bpy.context.object.rotation_euler[1] = 1.5708
+            bpy.ops.rigidbody.constraint_add()
+            bpy.context.object.rigid_body_constraint.type = 'MOTOR'
+            bpy.context.object.rigid_body_constraint.use_motor_ang = True
+            bpy.context.object.rigid_body_constraint.motor_ang_target_velocity = -10
+            bpy.context.object.rigid_body_constraint.motor_ang_max_impulse = 0.07
+            bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
+            bpy.context.object.rigid_body_constraint.solver_iterations = 40
+            bpy.context.object.rigid_body_constraint.object1 = arm
+            bpy.context.object.rigid_body_constraint.object2 = base
+
+
+
+            bpy.ops.object.empty_add(type='SINGLE_ARROW', location=(0,0 ,0))
+            #bpy.ops.object.move_to_collection(collection_index=1)
+            bpy.context.object.empty_display_size = 2
+            bpy.context.object.name = "E.2"
+            e2=bpy.data.objects[bpy.context.object.name]
+            bpy.ops.rigidbody.constraint_add()
+            bpy.context.object.rigid_body_constraint.type = 'GENERIC'
+            bpy.context.object.rigid_body_constraint.disable_collisions = False
+            bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
+            bpy.context.object.rigid_body_constraint.solver_iterations = 40
+            bpy.context.object.rigid_body_constraint.object1 = arm
+            bpy.context.object.rigid_body_constraint.object2 = base
+            bpy.context.object.rigid_body_constraint.use_limit_ang_x = True
+            bpy.context.object.rigid_body_constraint.use_limit_ang_y = True
+            bpy.context.object.rigid_body_constraint.use_limit_ang_z = True
+            bpy.context.object.rigid_body_constraint.limit_ang_x_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_ang_x_upper = 0
+            bpy.context.object.rigid_body_constraint.limit_ang_y_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_ang_y_upper = 0
+            bpy.context.object.rigid_body_constraint.limit_ang_z_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_ang_z_upper = 1.22173
+
+            bpy.context.object.rigid_body_constraint.use_limit_lin_x = True
+            bpy.context.object.rigid_body_constraint.use_limit_lin_y = True
+            bpy.context.object.rigid_body_constraint.use_limit_lin_z = True
+            bpy.context.object.rigid_body_constraint.limit_lin_x_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_lin_x_upper = 0
+            bpy.context.object.rigid_body_constraint.limit_lin_y_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_lin_y_upper = 0
+            bpy.context.object.rigid_body_constraint.limit_lin_z_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_lin_z_upper = 0
+
+
+            bpy.ops.object.select_all(action='DESELECT')
+            arm.select_set(True)
+            e2.select_set(True)
+            e1.select_set(True)
+            base.select_set(True)
+            bpy.context.view_layer.objects.active=base
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+
+            new_collection = make_collection("Switch"+str(helperindex), context.scene.collection)
+            new_collection.objects.link(base)
+            new_collection.objects.link(e2)
+            new_collection.objects.link(e1)
+            new_collection.objects.link(arm)
+            context.scene.collection.objects.unlink(e1)
+            context.scene.collection.objects.unlink(e2)
+            context.scene.collection.objects.unlink(arm)
+            context.scene.collection.objects.unlink(base)
+            
+######end COLLISIONSWITCH
+        if id==1:
+###### MotorWheel
+            helperindex+=1
+            layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
+            bpy.context.view_layer.active_layer_collection = layerColl
+
+            bpy.context.scene.cursor.location = [-0.5,0,0]
+
+            bpy.ops.mesh.primitive_cube_add(size=0.5, enter_editmode=False, location=(0, 0, 0))
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+            bpy.context.object.name = "wheelbase"
+            wheelbase=bpy.data.objects[bpy.context.object.name]
+            bpy.ops.rigidbody.object_add()
+            bpy.context.object.rigid_body.mass = 0.5
+            bpy.context.object.rigid_body.mesh_source = 'BASE'
+            bpy.context.object.rigid_body.friction = 1
+            bpy.context.object.rigid_body.use_margin = True
+            bpy.context.object.rigid_body.collision_margin = 0
+            
+            bpy.ops.mesh.primitive_cylinder_add(depth=0.2, enter_editmode=False, align='WORLD', location=(0, 0, 0), rotation=(0, 1.5708, 0))
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+            bpy.ops.transform.translate(value=(-0.5, 0, 0), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=True, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False)
+            bpy.context.object.name = "wheel"
+            wheel=bpy.data.objects[bpy.context.object.name]
+            bpy.ops.rigidbody.object_add()
+            bpy.context.object.rigid_body.mass = 0.2
+            bpy.context.object.rigid_body.friction = 1
+            bpy.context.object.rigid_body.use_margin = True
+            bpy.context.object.rigid_body.collision_margin = 0
+            
+            bpy.ops.rigidbody.constraint_add()
+            bpy.context.object.rigid_body_constraint.type = 'MOTOR'
+            bpy.context.object.rigid_body_constraint.use_motor_ang = True
+            bpy.context.object.rigid_body_constraint.motor_ang_target_velocity = -0.1
+            bpy.context.object.rigid_body_constraint.motor_ang_max_impulse = 0.07
+            bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
+            bpy.context.object.rigid_body_constraint.solver_iterations = 40
+            bpy.context.object.rigid_body_constraint.object1 = wheelbase
+            bpy.context.object.rigid_body_constraint.object2 = wheel
+
+            bpy.ops.object.empty_add(type='SINGLE_ARROW', location=(0,0 ,0))
+            #bpy.ops.object.move_to_collection(collection_index=1)
+            bpy.context.object.empty_display_size = 2
+            bpy.context.object.name = "E.3"
+            e3=bpy.data.objects[bpy.context.object.name]
+            bpy.ops.rigidbody.constraint_add()
+            bpy.context.object.rigid_body_constraint.type = 'GENERIC'
+            bpy.context.object.rigid_body_constraint.disable_collisions = False
+            bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
+            bpy.context.object.rigid_body_constraint.solver_iterations = 40
+            bpy.context.object.rigid_body_constraint.object1 = wheel
+            bpy.context.object.rigid_body_constraint.object2 = wheelbase
+            bpy.context.object.rigid_body_constraint.use_limit_ang_x = False
+            bpy.context.object.rigid_body_constraint.use_limit_ang_y = True
+            bpy.context.object.rigid_body_constraint.use_limit_ang_z = True
+            bpy.context.object.rigid_body_constraint.limit_ang_x_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_ang_x_upper = 0
+            bpy.context.object.rigid_body_constraint.limit_ang_y_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_ang_y_upper = 0
+            bpy.context.object.rigid_body_constraint.limit_ang_z_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_ang_z_upper = 0
+
+            bpy.context.object.rigid_body_constraint.use_limit_lin_x = True
+            bpy.context.object.rigid_body_constraint.use_limit_lin_y = True
+            bpy.context.object.rigid_body_constraint.use_limit_lin_z = True
+            bpy.context.object.rigid_body_constraint.limit_lin_x_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_lin_x_upper = 0
+            bpy.context.object.rigid_body_constraint.limit_lin_y_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_lin_y_upper = 0
+            bpy.context.object.rigid_body_constraint.limit_lin_z_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_lin_z_upper = 0
+            bpy.context.object.hide_viewport = True
+
+            bpy.ops.object.select_all(action='DESELECT')
+            wheel.select_set(True)
+            wheelbase.select_set(True)
+            e3.select_set(True)
+            bpy.context.view_layer.objects.active=wheelbase
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+
+            new_collection = make_collection("MotorWheel"+str(helperindex), context.scene.collection)
+            new_collection.objects.link(wheelbase)
+            new_collection.objects.link(wheel)
+            new_collection.objects.link(e3)
+            context.scene.collection.objects.unlink(e3)
+            context.scene.collection.objects.unlink(wheel)
+            context.scene.collection.objects.unlink(wheelbase)
+######end Motorwheel            
+        if id==2:
+            helperindex+=1
+            layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
+            bpy.context.view_layer.active_layer_collection = layerColl
+
+            bpy.ops.mesh.primitive_plane_add(size=20, enter_editmode=False, location=(0, 0, -1.1))
+            bpy.ops.rigidbody.object_add()
+            context.object.rigid_body.type = 'PASSIVE'
+            context.object.rigid_body.kinematic = True
+            context.object.rigid_body.friction = 1
+            bpy.context.object.rigid_body.use_margin = True
+            bpy.context.object.rigid_body.collision_margin = 0.04
+            
+            bpy.ops.object.empty_add(type='SINGLE_ARROW', location=(0, 100, 0))
+            bpy.context.object.empty_display_size = 2
+            bpy.context.object.name = "NORTHPOLE"
+            northpole=bpy.data.objects[bpy.context.object.name]
+            
+            bpy.ops.object.empty_add(type='SINGLE_ARROW', location=(0, 0, 3))
+            bpy.context.object.empty_display_size = 2
+            bpy.context.object.name = "COMPASS"
+            compass=bpy.data.objects[bpy.context.object.name]
+        
+            bpy.ops.object.constraint_add(type='TRACK_TO')
+            compass.constraints['Track To'].target=northpole
+            compass.constraints['Track To'].track_axis = 'TRACK_NEGATIVE_Y'
+            compass.constraints['Track To'].up_axis = 'UP_Z'
+            
+            bpy.ops.object.constraint_add(type='LIMIT_ROTATION')
+            compass.constraints["Limit Rotation"].use_limit_x = True
+            compass.constraints["Limit Rotation"].use_limit_y = True
+            context.scene.prelisim_compass=compass
+                            
+            
+        if id==3:
+            print(222)
+            ShowMessageBox('TODO:DistanceSensor')
+        print(id)
+        return {'FINISHED'}
+
+class VIEW3D_PT_prelisim_panel_creator(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_label = "Prelimutens Robotic"
+
+    @classmethod
+    def poll(cls, context):
+        return context.object
+
+    def draw(self, context):
+        layout = self.layout
+        
+        column = layout.column(align=False)
+        #column.prop(context.scene, "prelisim_script")
+        column.prop(context.scene, "prelisim_ip")
+        column.operator("scene.prelisim_generator")
+
+        for x in range(0, bpy.types.Scene.prelisim_count_total):
+            column.prop(context.scene,"prelisim_" + str(x).zfill(4))
+        
+        if bpy.types.Scene.prelisim_count_total>0:
+            column.operator("scene.prelisim_start")
+            column.operator("scene.prelisim_stop")
+            column.prop(context.scene, "prelisim_helper")
+            column.operator("scene.prelisim_addhelper")
+            column.prop(context.scene, "prelisim_compass")
+            column.prop(context.scene, "prelisim_compassdir")
+        
+
+def register():
+    bpy.types.Scene.prelisim_text = PointerProperty(type=bpy.types.Text)
+    bpy.types.Scene.prelisim_count_total = 0 #IntProperty(default=0, min=0, soft_min=0)
+    bpy.types.Scene.prelisim_var_panel = StringProperty(default="")
+    bpy.types.Scene.prelisim_ip = StringProperty(name="IP Arduino", default=ipdefault)
+    bpy.types.Scene.prelisim_helper = EnumProperty(items=[('0', 'CollisionSwitch', ''), ('1', 'MotorWheel', ''), ('2', 'World', ''),('3','NorthPole',''),('4','DistanceSensor','')], name='Helper')
+    bpy.types.Scene.prelisim_compass = PointerProperty(type=bpy.types.Object,name="Compass",description='Need a parent for the COMPASS to relative Direction')
+    bpy.types.Scene.prelisim_compassdir = FloatProperty(name="Compass Direction")
+    #bpy.types.Scene.prelisim_script = StringProperty(name="Script")
+    bpy.utils.register_class(prelisim_generator)
+    bpy.utils.register_class(prelisim_addhelper)
+    bpy.utils.register_class(prelisim_start)
+    bpy.utils.register_class(prelisim_stop)
+    bpy.utils.register_class(VIEW3D_PT_prelisim_panel_creator)
+    bpy.utils.register_class(ModalTimerOperator)
+    bpy.utils.register_class(PrelisimTimerOperator)
+
+def unregister():
+    del bpy.types.Scene.prelisim_text
+    del bpy.types.Scene.prelisim_count_total
+    del bpy.types.Scene.prelisim_var_panel
+    del bpy.types.Scene.prelisim_ip
+    del bpy.types.Scene.prelisim_helper
+    del bpy.types.Scene.prelisim_compass
+    del bpy.types.Scene.prelisim_compassdir
+    #del bpy.types.Scene.prelisim_script
+    bpy.utils.unregister_class(prelisim_generator)
+    bpy.utils.unregister_class(prelisim_addhelper)
+    bpy.utils.unregister_class(prelisim_start)
+    bpy.utils.unregister_class(prelisim_stop)
+    bpy.utils.unregister_class(VIEW3D_PT_prelisim_panel_creator)
+    bpy.utils.unregister_class(ModalTimerOperator)
+    bpy.utils.unregister_class(PrelisimTimerOperator)
+
+if __name__ == "__main__":
+    register()  
