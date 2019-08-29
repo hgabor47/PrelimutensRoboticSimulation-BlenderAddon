@@ -92,10 +92,10 @@ def thread_function(name):
                 #TODO !!! folytatni kell a többi típussal   
                     
                 
-        print(payload)
+        #print(payload)
         r = requests.get(ips,params=payload)
         y = json.loads(r.text)
-        print(y)
+        #print(y)
         
         #logging.info(y["motL"])
         #bpy.data.objects["E.1M"].rigid_body_constraint.motor_ang_target_velocity=y["motL"]*speed
@@ -202,7 +202,16 @@ class prelisim_stop(bpy.types.Operator):
         global killthread
         killthread=True
         #ShowMessageBox("Simulation stopped!") 
-        stop(context)     
+        stop(context)
+        '''try:   
+            bpy.app.handlers.frame_change_pre.remove(eventpoke)
+        except:
+            pass
+        try:
+            bpy.app.handlers.frame_change_post.remove(eventpeek)
+        except:
+            pass 
+        '''    
         return {'FINISHED'}
 
 
@@ -288,6 +297,8 @@ class prelisim_start(bpy.types.Operator):
     def execute(self,context):
         global x
         print("Start")
+        #bpy.app.handlers.frame_change_pre.append(eventpeek)
+        #bpy.app.handlers.frame_change_post.append(eventpoke)
         
         context.scene.frame_current = 1
         try:
@@ -305,7 +316,50 @@ class prelisim_start(bpy.types.Operator):
                              
         print('OK')
         return {'FINISHED'}
+'''    
+def eventpoke(scene):
+    if scene.frame_current == scene.frame_end:
+        print('-poke')
+        scene.frame_set(scene.frame_start+1)
+        #poke(bpy.context.view_layer.layer_collection)
+        
+def eventpeek(scene):
+    if scene.frame_current == scene.frame_start:
+        print('-peek')
+        #peek(bpy.context.view_layer.layer_collection)    
+def poke(layerColl): #poke(bpy.context.view_layer.layer_collection)
+    found = None
+    #print('-'+layerColl.collection.name)
+    for obj in layerColl.collection.objects:
+        try:
+            copy=obj.matrix_world.copy()
+            copyl=obj.matrix_local.copy()
+            obj['prelisim_mwc']=copy
+            obj['prelisim_mlc']=copyl
+            print(obj.name)
+        except:
+            pass
+    for layer in layerColl.children:
+        poke(layer)
 
+
+def peek(layerColl):
+    found = None
+    #print('-'+layerColl.collection.name)
+    for obj in layerColl.collection.objects:
+        try:
+            print(obj.name)
+            copy=Matrix(obj['prelisim_mwc'])            
+            copyl=Matrix(obj['prelisim_mwc'])            
+            if copy:
+                obj.matrix_world=copy
+                obj.matrix_local=copyl
+        except:
+            print('Err')
+            pass
+    for layer in layerColl.children: 
+        poke(layer)
+'''
 def recurLayerCollection(layerColl, collName):
     found = None
     if (layerColl.name == collName):
