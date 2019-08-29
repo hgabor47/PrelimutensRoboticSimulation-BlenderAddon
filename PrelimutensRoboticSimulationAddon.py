@@ -577,7 +577,8 @@ class prelisim_addhelper(bpy.types.Operator):
             context.scene.collection.objects.unlink(wheel)
             context.scene.collection.objects.unlink(wheelbase)
 ######end Motorwheel            
-        if id==2:
+        if id==2: 
+###### World with compass
             helperindex+=1
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
@@ -620,11 +621,13 @@ class prelisim_addhelper(bpy.types.Operator):
 class VIEW3D_PT_prelisim_panel_creator(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_label = "Prelimutens Robotic"
+    bl_label = "Prelimutens Robotic Simulation"
+    bl_category = "PreliSim"
+    bl_context     = "objectmode"
 
     @classmethod
     def poll(cls, context):
-        return context.object
+        return True #context.object
 
     def draw(self, context):
         layout = self.layout
@@ -634,14 +637,16 @@ class VIEW3D_PT_prelisim_panel_creator(bpy.types.Panel):
         column.prop(context.scene, "prelisim_ip")
         column.operator("scene.prelisim_generator")
 
+        column.prop(context.scene, "prelisim_helper")
+        column.operator("scene.prelisim_addhelper")
+
         for x in range(0, bpy.types.Scene.prelisim_count_total):
             column.prop(context.scene,"prelisim_" + str(x).zfill(4))
         
+
         if bpy.types.Scene.prelisim_count_total>0:
             column.operator("scene.prelisim_start")
             column.operator("scene.prelisim_stop")
-            column.prop(context.scene, "prelisim_helper")
-            column.operator("scene.prelisim_addhelper")
             column.prop(context.scene, "prelisim_compass")
             column.prop(context.scene, "prelisim_compassdir")
         
@@ -651,7 +656,7 @@ def register():
     bpy.types.Scene.prelisim_count_total = 0 #IntProperty(default=0, min=0, soft_min=0)
     bpy.types.Scene.prelisim_var_panel = StringProperty(default="")
     bpy.types.Scene.prelisim_ip = StringProperty(name="IP Arduino", default=ipdefault)
-    bpy.types.Scene.prelisim_helper = EnumProperty(items=[('0', 'CollisionSwitch', ''), ('1', 'MotorWheel', ''), ('2', 'World', ''),('3','NorthPole',''),('4','DistanceSensor','')], name='Helper')
+    bpy.types.Scene.prelisim_helper = EnumProperty(items=[('0', 'CollisionSwitch', ''), ('1', 'MotorWheel', ''), ('2', 'World', ''),('3','DistanceSensor','')], name='Helper')
     bpy.types.Scene.prelisim_compass = PointerProperty(type=bpy.types.Object,name="Compass",description='Need a parent for the COMPASS to relative Direction')
     bpy.types.Scene.prelisim_compassdir = FloatProperty(name="Compass Direction")
     #bpy.types.Scene.prelisim_script = StringProperty(name="Script")
