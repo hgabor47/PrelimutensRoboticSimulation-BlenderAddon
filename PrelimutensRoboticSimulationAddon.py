@@ -482,7 +482,7 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.ops.rigidbody.constraint_add()
             bpy.context.object.rigid_body_constraint.type = 'MOTOR'
             bpy.context.object.rigid_body_constraint.use_motor_ang = True
-            bpy.context.object.rigid_body_constraint.motor_ang_target_velocity = -10
+            bpy.context.object.rigid_body_constraint.motor_ang_target_velocity = 10
             bpy.context.object.rigid_body_constraint.motor_ang_max_impulse = 0.07
             bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
             bpy.context.object.rigid_body_constraint.solver_iterations = 40
