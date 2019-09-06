@@ -341,8 +341,6 @@ def poke(layerColl): #poke(bpy.context.view_layer.layer_collection)
             pass
     for layer in layerColl.children:
         poke(layer)
-
-
 def peek(layerColl):
     found = None
     #print('-'+layerColl.collection.name)
@@ -669,6 +667,67 @@ class prelisim_addhelper(bpy.types.Operator):
         if id==3:
             print(222)
             ShowMessageBox('TODO:DistanceSensor')
+
+        if id==4:
+            helperindex+=1
+            layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
+            bpy.context.view_layer.active_layer_collection = layerColl
+
+            bpy.context.scene.cursor.location = [-0,0,0]
+
+            bpy.ops.mesh.primitive_cube_add(size=2, enter_editmode=False, location=(0, 0, 0.2))
+            bpy.ops.transform.resize(value=(1, 1, 0.2))
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+            bpy.context.object.name = "airbase"
+            airbase=bpy.data.objects[bpy.context.object.name]
+            bpy.ops.rigidbody.object_add()
+            bpy.context.object.rigid_body.mass = 0.1            
+
+            bpy.ops.object.effector_add(type='WIND', enter_editmode=False, location=(0, 0, 0))
+            bpy.context.object.name = "airup"
+            airup=bpy.data.objects[bpy.context.object.name]
+            bpy.context.object.field.shape = 'LINE'
+            bpy.context.object.field.strength = 25
+            bpy.context.object.field.flow = 0
+            bpy.context.object.field.falloff_type = 'SPHERE'
+            bpy.context.object.field.z_direction = 'POSITIVE'
+            bpy.context.object.field.falloff_power = 10
+            bpy.context.object.field.use_min_distance = False
+            bpy.context.object.field.use_max_distance = True
+            bpy.context.object.field.distance_max = 2
+
+                        
+            bpy.ops.object.effector_add(type='WIND',  enter_editmode=False, location=(0, 0, 0))
+            bpy.ops.transform.rotate(value=3.14159, orient_axis='X', orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=True, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False)
+            bpy.context.object.name = "airdown"
+            airdown=bpy.data.objects[bpy.context.object.name]
+            bpy.context.object.field.shape = 'LINE'
+            bpy.context.object.field.strength = 1
+            bpy.context.object.field.flow = 0
+            bpy.context.object.field.falloff_type = 'SPHERE'
+            bpy.context.object.field.z_direction = 'POSITIVE'
+            bpy.context.object.field.falloff_power = 3
+            bpy.context.object.field.use_min_distance = True
+            bpy.context.object.field.distance_min = 2
+            bpy.context.object.field.use_max_distance = True
+            bpy.context.object.field.distance_max = 3            
+
+            
+            bpy.ops.object.select_all(action='DESELECT')
+            airup.select_set(True)
+            airdown.select_set(True)
+            airbase.select_set(True)
+            bpy.context.view_layer.objects.active=airbase
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+                        
+            new_collection = make_collection("AirWheel"+str(helperindex), context.scene.collection)
+            new_collection.objects.link(airbase)
+            new_collection.objects.link(airup)
+            new_collection.objects.link(airdown)
+            context.scene.collection.objects.unlink(airup)
+            context.scene.collection.objects.unlink(airdown)
+            context.scene.collection.objects.unlink(airbase)
+
         print(id)
         return {'FINISHED'}
 
@@ -710,7 +769,7 @@ def register():
     bpy.types.Scene.prelisim_count_total = 0 #IntProperty(default=0, min=0, soft_min=0)
     bpy.types.Scene.prelisim_var_panel = StringProperty(default="")
     bpy.types.Scene.prelisim_ip = StringProperty(name="IP Arduino", default=ipdefault)
-    bpy.types.Scene.prelisim_helper = EnumProperty(items=[('0', 'CollisionSwitch', ''), ('1', 'MotorWheel', ''), ('2', 'World', ''),('3','DistanceSensor','')], name='Helper')
+    bpy.types.Scene.prelisim_helper = EnumProperty(items=[('0', 'CollisionSwitch', ''), ('1', 'MotorWheel', ''), ('2', 'World', ''),('3','DistanceSensor',''),('4','AirEngine','')], name='Helper')
     bpy.types.Scene.prelisim_compass = PointerProperty(type=bpy.types.Object,name="Compass",description='Need a parent for the COMPASS to relative Direction')
     bpy.types.Scene.prelisim_compassdir = FloatProperty(name="Compass Direction")
     #bpy.types.Scene.prelisim_script = StringProperty(name="Script")
