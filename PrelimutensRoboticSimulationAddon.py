@@ -20,6 +20,8 @@ import threading
 import functools
 import queue
 import math
+import bmesh
+from mathutils import Vector, Euler
 
 import ast
 import json
@@ -50,6 +52,34 @@ def ShowMessageBox(message = "", title = "Message Box", icon = 'INFO'):
         print(self.layout)
 
     bpy.context.window_manager.popup_menu(draw, title = title, icon = icon)
+
+
+def min_dist(camera_name, rays_n=50):
+    scene = bpy.context.scene
+    z = -bpy.data.cameras[camera_name].lens * 0.027778
+    objs, ds = [], []
+    for i in range(rays_n + 1):
+        for j in range(rays_n + 1):
+            x = -0.5 + i / rays_n
+            y = 0.5 - j / rays_n
+            v = Vector((x, y, z))
+            r = bpy.data.objects[camera_name].rotation_euler
+            v.rotate(r)
+            view_layer = bpy.context.view_layer
+            result, location, normal, index, object, matrix = scene.ray_cast(view_layer, bpy.data.objects[camera_name].location, v)
+            if result:
+                d = Vector(bpy.data.objects[camera_name].location) - Vector(location)
+                d = d.length
+                if object.name in objs:
+                    if d < ds[objs.index(object.name)]:
+                        ds[objs.index(object.name)] = d
+                else:
+                    objs.append(object.name)
+                    ds.append(d)
+    if len(ds) > 0:
+        return min(ds), objs[ds.index(min(ds))]
+    else:
+        return None, None
 
 
 def diffangle(ob1,ob2):
