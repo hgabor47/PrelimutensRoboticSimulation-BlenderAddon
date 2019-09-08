@@ -480,6 +480,9 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.ops.rigidbody.object_add()
             context.object.rigid_body.type = 'PASSIVE'
             context.object.rigid_body.kinematic = True
+            context.object['limitangle']=30
+            context.object['boolvalue']=0
+            
             
             #layer=bpy.data.collections['switch1']
 
@@ -569,6 +572,8 @@ class prelisim_addhelper(bpy.types.Operator):
             context.scene.collection.objects.unlink(e2)
             context.scene.collection.objects.unlink(arm)
             context.scene.collection.objects.unlink(base)
+            
+            
             
 ######end COLLISIONSWITCH
         if id==1:
@@ -695,10 +700,16 @@ class prelisim_addhelper(bpy.types.Operator):
                             
             
         if id==3:
-            print(222)
-            ShowMessageBox('TODO:DistanceSensor')
+####### DISTANCESENSOR
+            bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(0, 0, 0), rotation=(1.5708, 0,0))
+            bpy.context.object.name = "distsensor"
+            distsensor=bpy.data.objects[bpy.context.object.name]
+            bpy.context.object.data.sensor_width = 5
+            bpy.context.object.data.show_sensor = True
+            bpy.context.object.hide_render = True
 
         if id==4:
+####### AIRENGINE
             helperindex+=1
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
