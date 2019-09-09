@@ -236,12 +236,13 @@ class prelisim_stop(bpy.types.Operator):
         '''try:   
             bpy.app.handlers.frame_change_pre.remove(eventpoke)
         except:
-            pass
+            pass '''
         try:
-            bpy.app.handlers.frame_change_post.remove(eventpeek)
+            #bpy.app.handlers.frame_change_post.remove(eventpeek)
+            bpy.app.handlers.frame_change_post.remove(eventframe)
         except:
             pass 
-        '''    
+           
         return {'FINISHED'}
 
 
@@ -329,6 +330,8 @@ class prelisim_start(bpy.types.Operator):
         print("Start")
         #bpy.app.handlers.frame_change_pre.append(eventpeek)
         #bpy.app.handlers.frame_change_post.append(eventpoke)
+        initialize()
+        bpy.app.handlers.frame_change_post.append(eventframe)
         
         context.scene.frame_current = 1
         try:
@@ -346,6 +349,14 @@ class prelisim_start(bpy.types.Operator):
                              
         print('OK')
         return {'FINISHED'}
+    
+    
+def eventframe(scene):
+    for o in bpy.context.scene['switches']:
+        v = o.matrix_local.to_euler()[2] / (pi/180)
+        v = min(floor(max(v-o['limitangle'],0)),1)
+        o['boolvalue']=v
+
 '''    
 def eventpoke(scene):
     if scene.frame_current == scene.frame_end:
@@ -480,8 +491,6 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.ops.rigidbody.object_add()
             context.object.rigid_body.type = 'PASSIVE'
             context.object.rigid_body.kinematic = True
-            context.object['limitangle']=30
-            context.object['boolvalue']=0
             
             
             #layer=bpy.data.collections['switch1']
@@ -494,6 +503,8 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.ops.object.location_clear(clear_delta=False)
             bpy.context.object.name = "arm"
             arm=bpy.data.objects[context.object.name]
+            context.object['limitangle']=30
+            context.object['boolvalue']=0            
             bpy.ops.rigidbody.object_add()
             bpy.context.object.rigid_body.mass = 0.1
             bpy.context.object.rigid_body.mesh_source = 'BASE'
@@ -797,13 +808,18 @@ class VIEW3D_PT_prelisim_panel_creator(bpy.types.Panel):
         for x in range(0, bpy.types.Scene.prelisim_count_total):
             column.prop(context.scene,"prelisim_" + str(x).zfill(4))
         
-
         if bpy.types.Scene.prelisim_count_total>0:
             column.operator("scene.prelisim_start")
             column.operator("scene.prelisim_stop")
             column.prop(context.scene, "prelisim_compass")
             column.prop(context.scene, "prelisim_compassdir")
         
+def initialize():    
+    sw=[]
+    for o in bpy.data.objects:
+        if 'limitangle' in o:
+            sw.append(o)
+    bpy.context.scene['switches']=sw
 
 def register():
     bpy.types.Scene.prelisim_text = PointerProperty(type=bpy.types.Text)
@@ -821,6 +837,7 @@ def register():
     bpy.utils.register_class(VIEW3D_PT_prelisim_panel_creator)
     bpy.utils.register_class(ModalTimerOperator)
     bpy.utils.register_class(PrelisimTimerOperator)
+    initialize()
 
 def unregister():
     del bpy.types.Scene.prelisim_text
