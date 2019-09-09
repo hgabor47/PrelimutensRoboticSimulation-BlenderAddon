@@ -353,9 +353,11 @@ class prelisim_start(bpy.types.Operator):
     
 def eventframe(scene):
     for o in bpy.context.scene['switches']:
-        v = o.matrix_local.to_euler()[2] / (pi/180)
-        v = min(floor(max(v-o['limitangle'],0)),1)
+        v = o.matrix_local.to_euler()[2] / (math.pi/180)
+        o['angle']=(0.8*o['angle'])+(0.2*v)
+        v = min(math.floor(max(v-o['limitangle'],0)),1)
         o['boolvalue']=v
+        
 
 '''    
 def eventpoke(scene):
@@ -505,6 +507,7 @@ class prelisim_addhelper(bpy.types.Operator):
             arm=bpy.data.objects[context.object.name]
             context.object['limitangle']=30
             context.object['boolvalue']=0            
+            context.object['angle']=0            
             bpy.ops.rigidbody.object_add()
             bpy.context.object.rigid_body.mass = 0.1
             bpy.context.object.rigid_body.mesh_source = 'BASE'
