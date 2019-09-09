@@ -357,6 +357,10 @@ def eventframe(scene):
         o['angle']=(0.8*o['angle'])+(0.2*v)
         v = min(math.floor(max(v-o['limitangle'],0)),1)
         o['boolvalue']=v
+    for o in bpy.context.scene['distsensor']:        
+        v = min_dist(o.name)
+        o['distance']=v[0]
+        o['object']=v[1]
         
 
 '''    
@@ -718,6 +722,10 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(0, 0, 0), rotation=(1.5708, 0,0))
             bpy.context.object.name = "distsensor"
             distsensor=bpy.data.objects[bpy.context.object.name]
+            l= len(bpy.data.cameras)-1
+            bpy.data.cameras[l].name = bpy.context.object.name
+            context.object['distance']=0.0            
+            context.object['object']=''   
             bpy.context.object.data.sensor_width = 5
             bpy.context.object.data.show_sensor = True
             bpy.context.object.hide_render = True
@@ -819,10 +827,14 @@ class VIEW3D_PT_prelisim_panel_creator(bpy.types.Panel):
         
 def initialize():    
     sw=[]
+    dst=[]
     for o in bpy.data.objects:
         if 'limitangle' in o:
             sw.append(o)
+        if 'distance' in o:
+            dst.append(o)
     bpy.context.scene['switches']=sw
+    bpy.context.scene['distsensor']=dst
 
 def register():
     bpy.types.Scene.prelisim_text = PointerProperty(type=bpy.types.Text)
