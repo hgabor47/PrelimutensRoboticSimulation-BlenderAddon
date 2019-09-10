@@ -54,21 +54,23 @@ def ShowMessageBox(message = "", title = "Message Box", icon = 'INFO'):
     bpy.context.window_manager.popup_menu(draw, title = title, icon = icon)
 
 
-def min_dist(camera_name, rays_n=50):
+def min_dist(camera_name, rays_n=10):
     scene = bpy.context.scene
-    z = -bpy.data.cameras[camera_name].lens * 0.027778
+    cam = bpy.data.cameras[camera_name]
+    camo = bpy.data.objects[camera_name]
+    view_layer = bpy.context.view_layer
+    z = -cam.lens * 0.027778
     objs, ds = [], []
     for i in range(rays_n + 1):
         for j in range(rays_n + 1):
             x = -0.5 + i / rays_n
             y = 0.5 - j / rays_n
             v = Vector((x, y, z))
-            r = bpy.data.objects[camera_name].rotation_euler
-            v.rotate(r)
-            view_layer = bpy.context.view_layer
-            result, location, normal, index, object, matrix = scene.ray_cast(view_layer, bpy.data.objects[camera_name].location, v)
+            r = camo.rotation_euler
+            v.rotate(r)            
+            result, location, normal, index, object, matrix = scene.ray_cast(view_layer, camo.location, v)
             if result:
-                d = Vector(bpy.data.objects[camera_name].location) - Vector(location)
+                d = Vector(camo.location) - Vector(location)
                 d = d.length
                 if object.name in objs:
                     if d < ds[objs.index(object.name)]:
@@ -352,15 +354,24 @@ class prelisim_start(bpy.types.Operator):
     
     
 def eventframe(scene):
-    for o in bpy.context.scene['switches']:
-        v = o.matrix_local.to_euler()[2] / (math.pi/180)
-        o['angle']=(0.8*o['angle'])+(0.2*v)
-        v = min(math.floor(max(v-o['limitangle'],0)),1)
-        o['boolvalue']=v
-    for o in bpy.context.scene['distsensor']:        
-        v = min_dist(o.name)
-        o['distance']=v[0]
-        o['object']=v[1]
+    try:
+        for o in scene['switches']:
+            v = o.matrix_local.to_euler()[2] / ( math.pi /180)
+            o['angle']=(0.8*o['angle'])+(0.2*v)
+            v = min(math.floor(max(v-o['limitangle'],0)),1)
+            o['boolvalue']=v
+    except:
+        pass
+    try:        
+        for o in scene['distsensor']:     
+            try: 
+                v = min_dist(o.name)
+                o['distance']=v[0]
+                o['object']=v[1]
+            except:
+                pass
+    except:
+        pass
         
 
 '''    
@@ -726,7 +737,7 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.data.cameras[l].name = bpy.context.object.name
             context.object['distance']=0.0            
             context.object['object']=''   
-            bpy.context.object.data.sensor_width = 5
+            bpy.context.object.data.lens = 150
             bpy.context.object.data.show_sensor = True
             bpy.context.object.hide_render = True
 
@@ -790,6 +801,9 @@ class prelisim_addhelper(bpy.types.Operator):
             context.scene.collection.objects.unlink(airup)
             context.scene.collection.objects.unlink(airdown)
             context.scene.collection.objects.unlink(airbase)
+        
+        if id == 5 :
+            print('TODO:GyroSensor')
 
         print(id)
         return {'FINISHED'}
@@ -828,20 +842,24 @@ class VIEW3D_PT_prelisim_panel_creator(bpy.types.Panel):
 def initialize():    
     sw=[]
     dst=[]
+    bpy.context.scene['switches']=sw
+    bpy.context.scene['distsensor']=dst
     for o in bpy.data.objects:
         if 'limitangle' in o:
             sw.append(o)
-        if 'distance' in o:
-            dst.append(o)
+        else: 
+            if 'distance' in o:
+                dst.append(o)
     bpy.context.scene['switches']=sw
     bpy.context.scene['distsensor']=dst
+    print('initialize')
 
 def register():
     bpy.types.Scene.prelisim_text = PointerProperty(type=bpy.types.Text)
     bpy.types.Scene.prelisim_count_total = 0 #IntProperty(default=0, min=0, soft_min=0)
     bpy.types.Scene.prelisim_var_panel = StringProperty(default="")
     bpy.types.Scene.prelisim_ip = StringProperty(name="IP Arduino", default=ipdefault)
-    bpy.types.Scene.prelisim_helper = EnumProperty(items=[('0', 'CollisionSwitch', ''), ('1', 'MotorWheel', ''), ('2', 'World', ''),('3','DistanceSensor',''),('4','AirEngine','')], name='Helper')
+    bpy.types.Scene.prelisim_helper = EnumProperty(items=[('0', 'CollisionSwitch', ''), ('1', 'MotorWheel', ''), ('2', 'World', ''),('3','DistanceSensor',''),('4','AirEngine',''),('5','GyroSensor','')], name='Helper')
     bpy.types.Scene.prelisim_compass = PointerProperty(type=bpy.types.Object,name="Compass",description='Need a parent for the COMPASS to relative Direction')
     bpy.types.Scene.prelisim_compassdir = FloatProperty(name="Compass Direction")
     #bpy.types.Scene.prelisim_script = StringProperty(name="Script")
@@ -852,7 +870,7 @@ def register():
     bpy.utils.register_class(VIEW3D_PT_prelisim_panel_creator)
     bpy.utils.register_class(ModalTimerOperator)
     bpy.utils.register_class(PrelisimTimerOperator)
-    initialize()
+    
 
 def unregister():
     del bpy.types.Scene.prelisim_text
