@@ -138,9 +138,10 @@ def thread_function(name):
             if name[0]=='O':
                 try:
                     exec('bpy.types.Scene.prelisimv=y["'+name+'"]')
-                    exec('scene.{0}=bpy.types.Scene.prelisimv'.format(item["var_name"]))
+                    s='bpy.data.scenes["Scene"].{0}=bpy.types.Scene.prelisimv'.format(item["var_name"])
+                    exec(s)
                 except:
-                    print(name)
+                    print("ERR:"+name)
                 
         
     print('Thread End')
