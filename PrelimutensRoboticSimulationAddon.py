@@ -82,6 +82,30 @@ def min_dist(camera_name, rays_n=10):
         return min(ds), objs[ds.index(min(ds))]
     else:
         return None, None
+    
+def lightsensor(camera_name, pixel = 4):    
+    #https://ammous88.wordpress.com/2015/01/16/blender-access-render-results-pixels-directly-from-python-2/
+    bpy.context.scene.render.engine = 'CYCLES'
+    bpy.context.scene.render.resolution_x = pixel
+    bpy.context.scene.render.resolution_y = pixel
+    bpy.context.scene.render.resolution_percentage = 100
+    bpy.context.scene.camera = bpy.data.objects[camera_name]
+    bpy.ops.render.render()        
+    pixels = list(bpy.data.images['Viewer Node'].pixels)
+    
+    r=0.0
+    g=0.0
+    b=0.0
+    for i in range(0, len(pixels), 4):
+        r=r+pixels[i]
+        g=g+pixels[i+1]
+        b=b+pixels[i+2]
+    pixnum = len(pixels)/4
+    r = r / pixnum
+    g=g/pixnum
+    b=b/pixnum
+    Lumi = (0.2126*r) + (0.7152*g) + (0.0722*b)    
+    return Lumi,[r,g,b]
 
 
 def diffangle(ob1,ob2):
@@ -101,8 +125,8 @@ def thread_function(name):
     ips='http://'+ip+':82'+ippath+'values'
     print(ips)
     while (maxi>0) and (not killthread):
-        time.sleep(0.1) 
-        maxi-=1
+        time.sleep(1) 
+        maxi-=1    
         
         payload={}
         for item in bpy.types.Scene.prelisim:
@@ -162,9 +186,6 @@ def clearcache(context):
     bpy.ops.ptcache.free_bake_all()
 
 
-def play(context):
-    if not context.screen.is_animation_playing:
-        bpy.ops.screen.animation_play()   
 
 class ModalTimerOperator(bpy.types.Operator):
     """Operator which runs its self from a timer"""
@@ -174,8 +195,7 @@ class ModalTimerOperator(bpy.types.Operator):
     idx=0
     def modal(self, context, event):
         if event.type == 'TIMER':
-            self.idx+=1
-            #print(self.idx)
+            self.idx+=1                      
             if bpy.context.scene.frame_current>5:
                 bpy.context.scene.frame_current=1
             #if bpy.context.scene.frame_current>2 and context.scene.frame_start==1:                
@@ -187,6 +207,8 @@ class ModalTimerOperator(bpy.types.Operator):
                 if context.scene.frame_start!=1: 
                     context.scene.frame_start=1  
                     context.scene.rigidbody_world.solver_iterations=15
+                    
+            
         return {'PASS_THROUGH'}
 
     def execute(self, context):
@@ -206,6 +228,57 @@ class ModalTimerOperator(bpy.types.Operator):
             wm.event_timer_remove(bpy.types.Scene.prelisim_timer_stop)
         bpy.types.Scene.prelisim_timer_stop=None
         
+
+class ModalTimerRenderOperator(bpy.types.Operator):
+    """Operator which runs its self from a timer"""
+    bl_idname = "wm.modal_rendertimer_operator"
+    bl_label = "Modal Timer Render Operator"
+    
+    idx=0
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            self.idx+=1
+            if context.screen.is_animation_playing:
+                try:                            
+                    for o in context.scene['lightsensor']:     
+                        try:                                                         
+                            l,rgb = lightsensor(o.name)
+                            o['luminance']=l
+                            o['R']=rgb[0]
+                            o['G']=rgb[1]
+                            o['B']=rgb[2]
+                        except:
+                            pass
+                except:
+                    pass    
+                    
+            else:      
+                self.cancel(context)
+                return {'FINISHED'}
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        wm = context.window_manager
+        try:
+            bpy.types.Scene.prelisim_rendertimer_stop
+        except:
+            bpy.types.Scene.prelisim_rendertimer_stop=None                    
+        if bpy.types.Scene.prelisim_rendertimer_stop==None:
+            bpy.types.Scene.prelisim_rendertimer_stop = wm.event_timer_add(1, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        wm = context.window_manager
+        if bpy.types.Scene.prelisim_rendertimer_stop!=None:
+            wm.event_timer_remove(bpy.types.Scene.prelisim_rendertimer_stop)
+        bpy.types.Scene.prelisim_rendertimer_stop=None
+
+
+def play(context):
+    if not context.screen.is_animation_playing:
+        bpy.ops.screen.animation_play()   
+        bpy.ops.wm.modal_rendertimer_operator() 
 
 def stop(context):
     bpy.context.scene.frame_current=1
@@ -384,6 +457,8 @@ def eventframe(scene):
                 pass
     except:
         pass
+    
+    
         
 
 '''    
@@ -815,6 +890,54 @@ class prelisim_addhelper(bpy.types.Operator):
             context.scene.collection.objects.unlink(airbase)
         
         if id == 5 :
+#print('TODO:LightSensor')
+            bpy.ops.mesh.primitive_plane_add(size=1, enter_editmode=False, location=(0, 0, -0.02))
+            bpy.context.object.name = "LightDetector"
+            context.object['lightdetector']=True  
+            lightdetector=bpy.data.objects[bpy.context.object.name]            
+            bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(0,0,0), rotation=(0,0,0))
+            bpy.context.object.name = "LightSensor"
+            context.object['lightsensor']=True  
+            context.object['R']=1.0
+            context.object['G']=1.0
+            context.object['B']=1.0
+            lightsensor=bpy.data.objects[bpy.context.object.name]    
+            bpy.context.object.data.type = 'ORTHO'
+            bpy.context.object.data.ortho_scale = 1
+            bpy.context.object.data.clip_start = 0.01
+            bpy.context.object.data.clip_end = 0.03
+            bpy.context.object.data.display_size = 0.01
+
+            bpy.ops.object.empty_add(type='SINGLE_ARROW', location=(0, 0, 1))
+            bpy.context.object.rotation_euler[0] = 3.14159
+            context.object['lightsensordir']=True  
+            lightsensordir=bpy.data.objects[bpy.context.object.name]    
+
+            #NODE for image pixel extracting
+            bpy.context.scene.use_nodes = True
+            tree = bpy.context.scene.node_tree
+            links = tree.links
+            for n in tree.nodes:
+                tree.nodes.remove(n)
+            rl = tree.nodes.new('CompositorNodeRLayers')      
+            rl.location = 100,100
+            v = tree.nodes.new('CompositorNodeViewer')   
+            v.location = 500,100
+            v.use_alpha = False
+            links.new(rl.outputs[0], v.inputs[0])  # link Image output to Viewer input
+            bpy.context.scene.render.engine = 'CYCLES'
+            bpy.context.scene.render.resolution_x = 4
+            bpy.context.scene.render.resolution_y = 4
+            bpy.context.scene.render.resolution_percentage = 100            
+
+            bpy.ops.object.select_all(action='DESELECT')
+            lightdetector.select_set(True)
+            lightsensordir.select_set(True)
+            lightsensor.select_set(True)
+            bpy.context.view_layer.objects.active=lightsensor
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+
+        if id == 6 :
             print('TODO:GyroSensor')
 
         print(id)
@@ -855,16 +978,27 @@ class VIEW3D_PT_prelisim_panel_creator(bpy.types.Panel):
 def initialize():    
     sw=[]
     dst=[]
+    lig=[]
     bpy.context.scene['switches']=sw
     bpy.context.scene['distsensor']=dst
+    bpy.context.scene['lightsensor']=lig
     for o in bpy.data.objects:
+        
         if 'limitangle' in o:
+            print('Switch: '+o.name)
             sw.append(o)
         else: 
             if 'distance' in o:
+                print('DistanceMeter: '+o.name)
                 dst.append(o)
+            else:
+                if 'lightsensor' in o:
+                    print('LightSensor:'+o.name)
+                    lig.append(o)
     bpy.context.scene['switches']=sw
     bpy.context.scene['distsensor']=dst
+    bpy.context.scene['lightsensor']=lig
+    print(lig)
     print('initialize')
 
 def register():
@@ -873,7 +1007,7 @@ def register():
     bpy.types.Scene.prelisim_var_panel = StringProperty(default="")
     bpy.types.Scene.prelisim_ip = StringProperty(name="BrainIP", default=ipdefault)
     bpy.types.Scene.prelisim_ippath = StringProperty(name="BrainPath", default='/')
-    bpy.types.Scene.prelisim_helper = EnumProperty(items=[('0', 'CollisionSwitch', ''), ('1', 'MotorWheel', ''), ('2', 'World', ''),('3','DistanceSensor',''),('4','AirEngine',''),('5','GyroSensor','')], name='Helper')
+    bpy.types.Scene.prelisim_helper = EnumProperty(items=[('0', 'CollisionSwitch', ''), ('1', 'MotorWheel', ''), ('2', 'World', ''),('3','DistanceSensor',''),('4','AirEngine',''),('5','LightSensor',''),('6','GyroSensor','')], name='Helper')
     bpy.types.Scene.prelisim_compass = PointerProperty(type=bpy.types.Object,name="Compass",description='Need a parent for the COMPASS to relative Direction')
     bpy.types.Scene.prelisim_compassdir = FloatProperty(name="Compass Direction")
     #bpy.types.Scene.prelisim_script = StringProperty(name="Script")
@@ -883,6 +1017,7 @@ def register():
     bpy.utils.register_class(prelisim_stop)
     bpy.utils.register_class(VIEW3D_PT_prelisim_panel_creator)
     bpy.utils.register_class(ModalTimerOperator)
+    bpy.utils.register_class(ModalTimerRenderOperator)    
     bpy.utils.register_class(PrelisimTimerOperator)
     
 
@@ -902,7 +1037,9 @@ def unregister():
     bpy.utils.unregister_class(prelisim_stop)
     bpy.utils.unregister_class(VIEW3D_PT_prelisim_panel_creator)
     bpy.utils.unregister_class(ModalTimerOperator)
+    bpy.utils.register_class(ModalTimerOperator)    
     bpy.utils.unregister_class(PrelisimTimerOperator)
 
 if __name__ == "__main__":
     register()  
+    
