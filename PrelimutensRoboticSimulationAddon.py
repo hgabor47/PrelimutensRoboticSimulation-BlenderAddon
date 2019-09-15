@@ -994,6 +994,7 @@ def initialize():
             else:
                 if 'lightsensor' in o:
                     print('LightSensor:'+o.name)
+                    o['lightsensor']=len(lig)
                     lig.append(o)
     bpy.context.scene['switches']=sw
     bpy.context.scene['distsensor']=dst
