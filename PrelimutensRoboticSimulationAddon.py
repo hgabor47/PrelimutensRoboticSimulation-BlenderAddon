@@ -7,7 +7,7 @@
 bl_info = {
     "name": "Prelimutens Robotic",
     "author": "Gabor Horvath",
-    "version": (0, 21),
+    "version": (0, 32),
     "blender": (2, 80, 0),
     "location": "View3D > Pre.Rob ",
     "description": "Robotic simulation interface between Arduino and Blender systems",
@@ -37,7 +37,10 @@ from bpy.props import (BoolProperty,EnumProperty,
                        PointerProperty,
                        StringProperty)
 
-ipdefault='192.168.137.10'
+ipdefault='http://localhost:82/prelimlogic/codes/'
+IDdefault ='f46ca35bc203a358f3d1f7673879a23d7018895f.php'
+Paramspath = '.params'
+Valuespath = ''
 killthread=False  #thread
 helperindex=1
 execution_queue = queue.Queue()
@@ -122,7 +125,8 @@ def thread_function(name):
     scene = bpy.data.scenes["Scene"]
     ip=scene.prelisim_ip
     ippath=scene.prelisim_ippath
-    ips='http://'+ip+':82'+ippath+'values'
+    #ips='http://'+ip+':82'+ippath+'values'
+    ips = ip+'/'+ippath
     print(ips)
     while (maxi>0) and (not killthread):
         time.sleep(1) 
@@ -133,6 +137,7 @@ def thread_function(name):
             type=item["type"]
             name=item["name"]
             if name[0]=='I':
+                name=name[1:99]
                 if type == "boolean":          
                     exec('bpy.types.Scene.prelisimv=scene.{0}'.format(item["var_name"]))      
                     if bpy.types.Scene.prelisimv:
@@ -161,6 +166,7 @@ def thread_function(name):
             type=item["type"]
             name=item["name"]
             if name[0]=='O':
+                name=name[1:99]
                 try:
                     exec('bpy.types.Scene.prelisimv=y["'+name+'"]')
                     s='bpy.data.scenes["Scene"].{0}=bpy.types.Scene.prelisimv'.format(item["var_name"])
@@ -338,12 +344,13 @@ class prelisim_generator(bpy.types.Operator):
             ShowMessageBox("No IP address for Arduino!") 
             return {'FINISHED'}
         if context.scene.prelisim_ippath=='':
-            context.scene.prelisim_ippath='/'
+            context.scene.prelisim_ippath=IDdefault
 
         try:
-            r = requests.get('http://'+context.scene.prelisim_ip+':82'+context.scene.prelisim_ippath+'params')
+            ips = context.scene.prelisim_ip+'/'+context.scene.prelisim_ippath+Paramspath            
+            r = requests.get(ips)
             if r.status_code!=200:
-                ShowMessageBox("Bad answer from Arduino!") 
+                ShowMessageBox("Bad params answer from Arduino!"+str(r.status_code)) 
                 return {'CANCELLED'}
         except:
             ShowMessageBox("Network error!") 
@@ -373,6 +380,7 @@ class prelisim_generator(bpy.types.Operator):
         bpy.types.Scene.prelisim=[]
         
         for var_name, var, value in zip(list_var_name, jkeys, jvalues):
+            #var=var[1:99]
             if type(value) == str:
                 if value == "boolean":
                     exec("bpy.types.Scene.{0}=BoolProperty(name='{1}')".format(var_name, var))  
@@ -420,9 +428,10 @@ class prelisim_start(bpy.types.Operator):
         context.scene.frame_current = 1
         try:
             if context.scene.prelisim_ippath=='':
-                context.scene.prelisim_ippath='/'
+                context.scene.prelisim_ippath=IDdefault
 
-            r = requests.get('http://'+context.scene.prelisim_ip+':82'+context.scene.prelisim_ippath+'values')            
+            r = requests.get(context.scene.prelisim_ip+'/'+context.scene.prelisim_ippath+Valuespath)
+            #r = requests.get('http://'+context.scene.prelisim_ip+':82'+context.scene.prelisim_ippath+'values')            
             if r.status_code!=200:
                 ShowMessageBox("Bad answer from Arduino!") 
                 return {'CANCELLED'}
@@ -1006,8 +1015,8 @@ def register():
     bpy.types.Scene.prelisim_text = PointerProperty(type=bpy.types.Text)
     bpy.types.Scene.prelisim_count_total = 0 #IntProperty(default=0, min=0, soft_min=0)
     bpy.types.Scene.prelisim_var_panel = StringProperty(default="")
-    bpy.types.Scene.prelisim_ip = StringProperty(name="BrainIP", default=ipdefault)
-    bpy.types.Scene.prelisim_ippath = StringProperty(name="BrainPath", default='/')
+    bpy.types.Scene.prelisim_ip = StringProperty(name="LogicAddress", default=ipdefault)
+    bpy.types.Scene.prelisim_ippath = StringProperty(name="ID", default=IDdefault)
     bpy.types.Scene.prelisim_helper = EnumProperty(items=[('0', 'CollisionSwitch', ''), ('1', 'MotorWheel', ''), ('2', 'World', ''),('3','DistanceSensor',''),('4','AirEngine',''),('5','LightSensor',''),('6','GyroSensor','')], name='Helper')
     bpy.types.Scene.prelisim_compass = PointerProperty(type=bpy.types.Object,name="Compass",description='Need a parent for the COMPASS to relative Direction')
     bpy.types.Scene.prelisim_compassdir = FloatProperty(name="Compass Direction")
