@@ -10,18 +10,18 @@ bl_info = {
     "version": (0, 32),
     "blender": (2, 80, 0),
     "location": "View3D > Pre.Rob ",
-    "description": "Robotic simulation interface between Arduino and Blender systems",
+    "description": "Robotic simulation interface between a device (or service) and Blender systems",
     "warning": "",
     "category": "Mesh"}
 
-
+import sys
 import requests
 import threading
 import functools
 import queue
 import math
 import bmesh
-from mathutils import Vector, Euler
+from mathutils import Vector, Euler, Matrix
 
 import ast
 import json
@@ -37,6 +37,14 @@ from bpy.props import (BoolProperty,EnumProperty,
                        PointerProperty,
                        StringProperty)
 
+msg = dict()
+msg['noip'] = 'No IP address for device/service!'
+msg['badparam'] = 'Bad params from device/service!'
+msg['noanswer'] = 'Bad answer from device/service!'
+msg['norigibodies'] = 'Please check it: need least one rigid body and device/service connected to network'
+msg['becauseblender'] = 'because Blender behaviours'
+
+
 ipdefault='http://localhost:82/'
 IDdefault ='values2'
 Paramspath = '.params'
@@ -46,6 +54,7 @@ helperindex=1
 execution_queue = queue.Queue()
 northpole=0
 compass=0
+runWithoutService = False
 
 def ShowMessageBox(message = "", title = "Message Box", icon = 'INFO'):
 
@@ -56,6 +65,17 @@ def ShowMessageBox(message = "", title = "Message Box", icon = 'INFO'):
 
     bpy.context.window_manager.popup_menu(draw, title = title, icon = icon)
 
+
+def pos360(v,l,b):
+    #value,last,base
+    if (math.copysign(1,v)!=math.copysign(1,l)):
+        if ((l>90) and (v<-90)):
+            print('+360')
+            return b+360
+        if ((l<-90) and (v>90)):
+            print('360')
+            return b-360
+    return b   # return base ...,-720,-360,0,360,720... need to add to V value 
 
 def min_dist(camera_name, rays_n=10):
     scene = bpy.context.scene
@@ -131,7 +151,6 @@ def thread_function(name):
     while (maxi>0) and (not killthread):
         time.sleep(1) 
         maxi-=1    
-        
         payload={}
         for item in bpy.types.Scene.prelisim:
             type=item["type"]
@@ -192,21 +211,22 @@ def clearcache(context):
     bpy.ops.ptcache.free_bake_all()
 
 
-
+stopcycle=0
 class ModalTimerOperator(bpy.types.Operator):
     """Operator which runs its self from a timer"""
     bl_idname = "wm.modal_timer_operator"
     bl_label = "Modal Timer Operator"
     
     idx=0
-    def modal(self, context, event):
+    def modal(self, context, event):        
         if event.type == 'TIMER':
-            self.idx+=1                      
+            self.idx+=1
+            print(self.idx)
             if bpy.context.scene.frame_current>5:
                 bpy.context.scene.frame_current=1
             #if bpy.context.scene.frame_current>2 and context.scene.frame_start==1:                
                 if context.screen.is_animation_playing:
-                    bpy.ops.screen.animation_play()
+                    bpy.ops.screen.animation_play()                
                 self.cancel(context)
                 return {'FINISHED'}
             if bpy.context.scene.frame_current>3:
@@ -228,11 +248,18 @@ class ModalTimerOperator(bpy.types.Operator):
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
-    def cancel(self, context):
+    def cancel(self, context):        
+        global stopcycle
         wm = context.window_manager
         if bpy.types.Scene.prelisim_timer_stop!=None:
             wm.event_timer_remove(bpy.types.Scene.prelisim_timer_stop)
         bpy.types.Scene.prelisim_timer_stop=None
+        stopcycle+=1
+        if (stopcycle<2):
+            #print('RESTOP'+msg['becauseblender']) 
+            bpy.context.scene.frame_current=1
+            play(context)
+            bpy.ops.wm.modal_timer_operator()
         
 
 class ModalTimerRenderOperator(bpy.types.Operator):
@@ -287,9 +314,12 @@ def play(context):
         bpy.ops.wm.modal_rendertimer_operator() 
 
 def stop(context):
+    global stopcycle
+    stopcycle=0
     bpy.context.scene.frame_current=1
     play(context)
-    bpy.ops.wm.modal_timer_operator()    
+    bpy.ops.wm.modal_timer_operator()
+ 
     
 def setInfinity(context): 
     context.scene.frame_current=1
@@ -338,10 +368,11 @@ class prelisim_generator(bpy.types.Operator):
     bl_label = "Connect"
 
     def execute(self, context):
+        global runWithoutService
         bpy.types.Scene.prelisim_count_total =0
         
         if context.scene.prelisim_ip == "":
-            ShowMessageBox("No IP address for Arduino!") 
+            ShowMessageBox(msg['noip']) 
             return {'FINISHED'}
         if context.scene.prelisim_ippath=='':
             context.scene.prelisim_ippath=IDdefault
@@ -350,11 +381,14 @@ class prelisim_generator(bpy.types.Operator):
             ips = context.scene.prelisim_ip+'/'+context.scene.prelisim_ippath+Paramspath            
             print(ips)
             r = requests.get(ips)
+            runWithoutService=False
             if r.status_code!=200:
-                ShowMessageBox("Bad params answer from Arduino!"+str(r.status_code)) 
+                runWithoutService=True
+                ShowMessageBox(msg['badparam']+str(r.status_code)) 
                 return {'CANCELLED'}
         except:
-            ShowMessageBox("Network error!") 
+            runWithoutService=True
+            ShowMessageBox("Network error!")             
             return {'CANCELLED'}
         
         data = r.text
@@ -416,9 +450,10 @@ class prelisim_start(bpy.types.Operator):
 
     def execute(self,context):
         global x
+        global runWithoutService
         print("Start")
         if context.scene.prelisim_ip == "":
-            ShowMessageBox("No IP address for Arduino!") 
+            ShowMessageBox(msg['noip']) 
             return {'FINISHED'}
         
         #bpy.app.handlers.frame_change_pre.append(eventpeek)
@@ -428,20 +463,23 @@ class prelisim_start(bpy.types.Operator):
         
         context.scene.frame_current = 1
         try:
-            if context.scene.prelisim_ippath=='':
-                context.scene.prelisim_ippath=IDdefault
-
-            r = requests.get(context.scene.prelisim_ip+'/'+context.scene.prelisim_ippath+Valuespath)
-            #r = requests.get('http://'+context.scene.prelisim_ip+':82'+context.scene.prelisim_ippath+'values')            
-            if r.status_code!=200:
-                ShowMessageBox("Bad answer from Arduino!") 
-                return {'CANCELLED'}
-            #clearcache(context)
-            setInfinity(context)            
-            x = threading.Thread(target=thread_function, args=(1,))
-            x.start()
+            if (not runWithoutService):
+                if context.scene.prelisim_ippath=='':
+                    context.scene.prelisim_ippath=IDdefault
+                r = requests.get(context.scene.prelisim_ip+'/'+context.scene.prelisim_ippath+Valuespath)
+                if r.status_code!=200:
+                    runWithoutService=True
+                    ShowMessageBox(msg['noanswer']) 
+                    #return {'CANCELLED'}
+                #clearcache(context)
+                setInfinity(context)
+                if (not runWithoutService):                    
+                    x = threading.Thread(target=thread_function, args=(1,))
+                    x.start()
+            else:
+                setInfinity(context)
         except:
-            ShowMessageBox("Please check it: need least one rigid body and Arduino connected to network") 
+            ShowMessageBox(msg['norigidbodies']) 
             print('No rigid bodies or http error')   
                              
         print('OK')
@@ -449,6 +487,10 @@ class prelisim_start(bpy.types.Operator):
     
     
 def eventframe(scene):
+    #print('eventfr')    TUDAS:
+    #bpy.context.view_layer.update() 
+    #bpy.context.scene.update()
+    #bpy.ops.anim.update_animated_transform_constraints(True)
     try:
         for o in scene['switches']:
             v = o.matrix_local.to_euler()[2] / ( math.pi /180)
@@ -457,6 +499,7 @@ def eventframe(scene):
             o['boolvalue']=v
     except:
         pass
+    
     try:        
         for o in scene['distsensor']:     
             try: 
@@ -467,28 +510,36 @@ def eventframe(scene):
                 pass
     except:
         pass
-    try:
-        for o in scene['servo']:                                    
-            v = o.matrix_local.to_euler()[0] / ( math.pi /180)            
-            v1 = o.matrix_local.to_euler()[1] / ( math.pi /180)   
-            v2 = o.matrix_local.to_euler()[2] / ( math.pi /180)   
-            print(str(v)+' - ' + str(v1)+' - '+str(v2))
-            '''
-            dif = (o['servoangle']-v)            
-            if (abs(dif)<4):
-                print('servo0 '+str(v)+'..'+str(dif))
-                o.rigid_body_constraint.motor_ang_target_velocity=0
-            else:
-                if (dif<0):
-                    print('servo-1 '+str(v)+'..'+str(dif))
-                    o.rigid_body_constraint.motor_ang_target_velocity=-min(1,(-dif/4))                    
+
+    try:              
+        if ((scene.frame_current % 3)==0):
+            i=0               
+            for o in scene['servo']:                
+                i=i+1     
+                if ((o['servoposition']%360)==0.0):
+                    #print('-----Error')
+                    continue #0.0 mean Blender error so no calculated values randomly :(                     
+                #print(o['servoposition'],o['_servolast'],o['_servobase'])
+                base = pos360(o['servoposition'],o['_servolast'],o['_servobase'])
+                o['_servobase'] = base
+                v = o['servoposition']+o['_servobase']   #actual position
+
+                o['_servolast'] = v
+                #print(o['servoposition'],o['_servolast'],o['_servobase'])
+                dif = o['servoangle']-v
+                if (abs(dif)<0.4):
+                    #print('servo0 '+str(v)+'..'+str(dif))
+                    o.rigid_body_constraint.motor_ang_target_velocity=0
                 else:
-                    print('servo1 '+str(v)+'..'+str(dif))
-                    o.rigid_body_constraint.motor_ang_target_velocity=min(1,dif/4)
-            '''
-                    
+                    if (dif<0):
+                        #print('servo-1 '+str(v)+'..'+str(dif))
+                        o.rigid_body_constraint.motor_ang_target_velocity=-min(3,(-dif/7))                    
+                    else:
+                        #print('servo1 '+str(v)+'..'+str(dif))
+                        o.rigid_body_constraint.motor_ang_target_velocity=min(3,dif/7)
     except:
-        pass
+        print(sys.exc_info()[0])
+        pass    
 
         
 
@@ -576,14 +627,33 @@ class PrelisimTimerOperator(bpy.types.Operator):
                 scene = bpy.data.scenes["Scene"]                
                 euler=scene.prelisim_compass.matrix_local.decompose()[1].to_euler()
                 euler[2]=euler[2]*(180/math.pi)
-                #print(euler[2])
                 scene.prelisim_compassdir=euler[2]
-                
-
-
-
             except:
                 euler=0
+
+            # try:                                    
+            #     for o in scene['servo']:                            
+            #         v = o.matrix_local.to_euler()                    
+            #         v0 = round( v[0] / ( math.pi /180) ,1 )
+            #         #if (v0!=0.0):
+            #         print('\t\t'+o.name+':'+str(v0))
+            #         '''
+            #         dif = (o['servoangle']-v)            
+            #         if (abs(dif)<4):
+            #             print('servo0 '+str(v)+'..'+str(dif))
+            #             o.rigid_body_constraint.motor_ang_target_velocity=0
+            #         else:
+            #             if (dif<0):
+            #                 print('servo-1 '+str(v)+'..'+str(dif))
+            #                 o.rigid_body_constraint.motor_ang_target_velocity=-min(1,(-dif/4))                    
+            #             else:
+            #                 print('servo1 '+str(v)+'..'+str(dif))
+            #                 o.rigid_body_constraint.motor_ang_target_velocity=min(1,dif/4)
+            #         '''                            
+            # except:
+            #     print(sys.exc_info()[0])
+            #     pass
+
         return {'PASS_THROUGH'}
 
     def execute(self, context):
@@ -613,7 +683,7 @@ class prelisim_addhelper(bpy.types.Operator):
         global compass
         id=int(bpy.data.scenes['Scene'].prelisim_helper)
         if id==0: #CollisionSwitch
-######COLLISIONSWITCH
+ ######COLLISIONSWITCH
             helperindex+=1
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
@@ -726,9 +796,9 @@ class prelisim_addhelper(bpy.types.Operator):
             
             
             
-######end COLLISIONSWITCH
+
         if id==1:
-###### MotorWheel
+ ###### MotorWheel
             helperindex+=1
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
@@ -814,9 +884,9 @@ class prelisim_addhelper(bpy.types.Operator):
             context.scene.collection.objects.unlink(e3)
             context.scene.collection.objects.unlink(wheel)
             context.scene.collection.objects.unlink(wheelbase)
-######end Motorwheel            
+          
         if id==2: 
-###### World with compass
+ ###### World with compass
             helperindex+=1
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
@@ -851,7 +921,7 @@ class prelisim_addhelper(bpy.types.Operator):
                             
             
         if id==3:
-####### DISTANCESENSOR
+ ####### DISTANCESENSOR
             bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(0, 0, 0), rotation=(1.5708, 0,0))
             bpy.context.object.name = "distsensor"
             distsensor=bpy.data.objects[bpy.context.object.name]
@@ -864,7 +934,7 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.hide_render = True
 
         if id==4:
-####### AIRENGINE
+ ####### AIRENGINE
             helperindex+=1
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
@@ -925,7 +995,7 @@ class prelisim_addhelper(bpy.types.Operator):
             context.scene.collection.objects.unlink(airbase)
         
         if id == 5 :
-#print('TODO:LightSensor')
+ #print('TODO:LightSensor')
             bpy.ops.mesh.primitive_plane_add(size=1, enter_editmode=False, location=(0, 0, -0.02))
             bpy.context.object.name = "LightDetector"
             context.object['lightdetector']=True  
@@ -976,7 +1046,7 @@ class prelisim_addhelper(bpy.types.Operator):
             print('TODO:GyroSensor')
 
         if id == 7:
-##### SERVO            
+ ##### SERVO            
             print("TODO Servo")
             helperindex+=1
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
@@ -989,46 +1059,16 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.name = "servobase"
             servobase=bpy.data.objects[bpy.context.object.name]
             bpy.ops.rigidbody.object_add()
+            bpy.context.object.rigid_body.type = 'PASSIVE'
             bpy.context.object.rigid_body.mass = 1
             bpy.context.object.rigid_body.mesh_source = 'BASE'
             bpy.context.object.rigid_body.friction = 1
             bpy.context.object.rigid_body.use_margin = True
             bpy.context.object.rigid_body.collision_margin = 0
 
-            bpy.ops.mesh.primitive_cube_add(size=0.5, enter_editmode=False, location=(0, 0, 0))
-            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-            bpy.ops.transform.translate(value=(-0.5, 0, 0), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=True, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False)
-            bpy.context.object.name = "servo"
-            servo=bpy.data.objects[bpy.context.object.name]
-            bpy.ops.rigidbody.object_add()
-            bpy.context.object.rigid_body.mass = 0.5
-            bpy.context.object.rigid_body.friction = 1
-            bpy.context.object.rigid_body.use_margin = True
-            bpy.context.object.rigid_body.collision_margin = 0
-            bpy.context.object['servolimitmin']=-30            
-            bpy.context.object['servolimitmax']=30
-            bpy.context.object['servoangle']=10 
-            
-
-            bpy.ops.rigidbody.constraint_add()
-            bpy.context.object.rigid_body_constraint.type = 'MOTOR'
-            bpy.context.object.rigid_body_constraint.use_motor_ang = True
-            bpy.context.object.rigid_body_constraint.motor_ang_target_velocity = 1
-            bpy.context.object.rigid_body_constraint.motor_ang_max_impulse = 4
-            bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
-            bpy.context.object.rigid_body_constraint.solver_iterations = 40
-            bpy.context.object.rigid_body_constraint.object1 = servobase
-            bpy.context.object.rigid_body_constraint.object2 = servo
-
-            bpy.ops.object.empty_add(type='SINGLE_ARROW', location=(0, 0, 0))
-            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-            bpy.ops.transform.translate(value=(-0.25, 0, 0), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=True, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False)
-            bpy.context.object.name = "E.4"
-            connect=bpy.data.objects[bpy.context.object.name]
-
             bpy.ops.rigidbody.constraint_add()
             bpy.context.object.rigid_body_constraint.type = 'GENERIC'
-            bpy.context.object.rigid_body_constraint.use_limit_ang_x = True
+            bpy.context.object.rigid_body_constraint.use_limit_ang_x = False
             bpy.context.object.rigid_body_constraint.use_limit_ang_y = True
             bpy.context.object.rigid_body_constraint.use_limit_ang_z = True
             bpy.context.object.rigid_body_constraint.use_limit_lin_x = True
@@ -1046,26 +1086,63 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.rigid_body_constraint.limit_lin_y_upper = 0
             bpy.context.object.rigid_body_constraint.limit_lin_z_lower = 0
             bpy.context.object.rigid_body_constraint.limit_lin_z_upper = 0
+            bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
+            bpy.context.object.rigid_body_constraint.solver_iterations = 40
+            bpy.context.object.rigid_body_constraint.object1 = servobase
 
+            bpy.ops.mesh.primitive_cube_add(size=0.5, enter_editmode=False, location=(0, 0, 0))
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+            bpy.ops.transform.translate(value=(-0.5, 0, 0), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=True, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False)
+            bpy.context.object.name = "servo"
+            servo=bpy.data.objects[bpy.context.object.name]
+            bpy.ops.rigidbody.object_add()
+            bpy.context.object.rigid_body.mass = 0.5
+            bpy.context.object.rigid_body.friction = 1
+            bpy.context.object.rigid_body.use_margin = True
+            bpy.context.object.rigid_body.collision_margin = 0
+            bpy.context.object['servolimitmin']=-30 
+            bpy.context.object['servolimitmax']=30
+            bpy.context.object['servoangle']=10   #need hold this position (run to this pos)
+            bpy.context.object['servoposition']=0.0 #actual pos
+            bpy.context.object['_servolast']=0.0 # calculated last pos 
+            bpy.context.object['_servobase']=0.0 # calculated 0, 360, 720 ... -360 -720 ...
+
+            v = servo.driver_add('["servoposition"]')            
+            v.driver.variables.new()
+            v.driver.variables[0].type='ROTATION_DIFF'
+            v.driver.expression='degrees(var)'
+            v.driver.variables[0].targets[0].id=servo
+            v.driver.variables[0].targets[1].id=servobase
+            
+            '''
+            t = v.driver.variables[0].targets[0]
+            t.id=servo
+            t.transform_space='WORLD_SPACE'
+            t.transform_type='ROT_X'            
+            '''
+            bpy.ops.rigidbody.constraint_add()
+            bpy.context.object.rigid_body_constraint.type = 'MOTOR'
+            bpy.context.object.rigid_body_constraint.use_motor_ang = True
+            bpy.context.object.rigid_body_constraint.motor_ang_target_velocity = 1
+            bpy.context.object.rigid_body_constraint.motor_ang_max_impulse = 4
             bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
             bpy.context.object.rigid_body_constraint.solver_iterations = 40
             bpy.context.object.rigid_body_constraint.object1 = servobase
             bpy.context.object.rigid_body_constraint.object2 = servo
 
-            servo['servoobj']=[servobase,connect]
+            servobase.rigid_body_constraint.object2 = servo
+
+            servo['servoobj']=[servobase]
 
             bpy.ops.object.select_all(action='DESELECT')
             servo.select_set(True)
             servobase.select_set(True)
-            connect.select_set(True)
             bpy.context.view_layer.objects.active=servobase
             bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
 
             new_collection = make_collection("Servo"+str(helperindex), context.scene.collection)
             new_collection.objects.link(servobase)
             new_collection.objects.link(servo)
-            new_collection.objects.link(connect)
-            context.scene.collection.objects.unlink(connect)
             context.scene.collection.objects.unlink(servo)
             context.scene.collection.objects.unlink(servobase)
 
@@ -1100,9 +1177,9 @@ class VIEW3D_PT_prelisim_panel_creator(bpy.types.Panel):
         for x in range(0, bpy.types.Scene.prelisim_count_total):
             column.prop(context.scene,"prelisim_" + str(x).zfill(4))
         
+        column.operator("scene.prelisim_start")
         column.operator("scene.prelisim_stop")
         if bpy.types.Scene.prelisim_count_total>0:
-            column.operator("scene.prelisim_start")
             column.prop(context.scene, "prelisim_compass")
             column.prop(context.scene, "prelisim_compassdir")
         
@@ -1148,7 +1225,7 @@ def register():
     bpy.types.Scene.prelisim_ip = StringProperty(name="LogicAddress", default=ipdefault)
     bpy.types.Scene.prelisim_ippath = StringProperty(name="ID", default=IDdefault)
     bpy.types.Scene.prelisim_helper = EnumProperty(items=[('0', 'CollisionSwitch', ''), ('1', 'MotorWheel', ''), ('2', 'World', ''),('3','DistanceSensor',''),('4','AirEngine',''),('5','LightSensor',''),('6','GyroSensor',''),('7','Servo','')], name='Helper')
-    bpy.types.Scene.prelisim_compass = PointerProperty(type=bpy.types.Object,name="Compass",description='Need a parent for the COMPASS to relative Direction')
+    bpy.types.Scene.prelisim_compass = PointerProperty(type=bpy.types.Object,name="Compass",description='Need a parent for the COMPASS to calc the relative Direction')
     bpy.types.Scene.prelisim_compassdir = FloatProperty(name="Compass Direction")
     #bpy.types.Scene.prelisim_script = StringProperty(name="Script")
     bpy.utils.register_class(prelisim_generator)
