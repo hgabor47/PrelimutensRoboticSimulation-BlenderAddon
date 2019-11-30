@@ -43,6 +43,7 @@ msg['badparam'] = 'Bad params from device/service!'
 msg['noanswer'] = 'Bad answer from device/service!'
 msg['norigidbodies'] = 'Please check it: need least one rigid body and device/service connected to network'
 msg['becauseblender'] = 'because Blender behaviours'
+msg['needempty'] = 'Need only one selected and empty type object for reference!'
 
 
 ipdefault='http://localhost:82/'
@@ -365,7 +366,7 @@ class prelisim_stop(bpy.types.Operator):
 # { "Power":"6.6", "Style":"1", "Enabled" : "true" }
 class prelisim_generator(bpy.types.Operator):
     bl_idname = "scene.prelisim_generator"
-    bl_label = "Connect"
+    bl_label = "Connect and load params"
 
     def execute(self, context):
         global runWithoutService
@@ -513,29 +514,27 @@ def eventframe(scene):
 
     try:              
         if ((scene.frame_current % 3)==0):
-            i=0               
-            for o in scene['servo']:                
-                i=i+1     
+            i=0              
+            print('---')  
+            for o in scene['servo']: 
+                print('Servo:'+o.name)               
+                i=i+1
                 if ((o['servoposition']%360)==0.0):
-                    #print('-----Error')
-                    continue #0.0 mean Blender error so no calculated values randomly :(                     
-                #print(o['servoposition'],o['_servolast'],o['_servobase'])
+                    if (abs(o.rigid_body_constraint.motor_ang_target_velocity)<0.01):
+                        print('speed up')
+                        o.rigid_body_constraint.motor_ang_target_velocity=0.1 # because if no speed than stucked in this pos        
+                    continue #0.0 mean Blender error so no calculated values randomly :(
                 base = pos360(o['servoposition'],o['_servolast'],o['_servobase'])
                 o['_servobase'] = base
                 v = o['servoposition']+o['_servobase']   #actual position
-
                 o['_servolast'] = v
-                #print(o['servoposition'],o['_servolast'],o['_servobase'])
                 dif = o['servoangle']-v
                 if (abs(dif)<0.4):
-                    #print('servo0 '+str(v)+'..'+str(dif))
                     o.rigid_body_constraint.motor_ang_target_velocity=0
                 else:
                     if (dif<0):
-                        #print('servo-1 '+str(v)+'..'+str(dif))
                         o.rigid_body_constraint.motor_ang_target_velocity=-min(3,(-dif/7))                    
                     else:
-                        #print('servo1 '+str(v)+'..'+str(dif))
                         o.rigid_body_constraint.motor_ang_target_velocity=min(3,dif/7)
     except:
         print(sys.exc_info()[0])
@@ -1048,6 +1047,11 @@ class prelisim_addhelper(bpy.types.Operator):
         if id == 7:
  ##### SERVO            
             print("TODO Servo")
+            sel = bpy.context.selected_objects
+            if ((sel==[]) or (sel[0].type!='EMPTY')):
+                ShowMessageBox(msg['needempty']) 
+                return {'FINISHED'}
+            
             helperindex+=1
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
@@ -1058,6 +1062,26 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
             bpy.context.object.name = "servobase"
             servobase=bpy.data.objects[bpy.context.object.name]
+            
+            bpy.ops.mesh.primitive_cube_add(size=0.5, enter_editmode=False, location=(0, 0, 0))
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+            bpy.ops.transform.translate(value=(-0.5, 0, 0), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=True, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False)
+            bpy.context.object.name = "servo"
+            servo=bpy.data.objects[bpy.context.object.name]
+
+            bpy.ops.object.select_all(action='DESELECT')
+            servo.select_set(True)
+            servobase.select_set(True)
+            bpy.context.view_layer.objects.active=servobase
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+            servobase.rotation_euler=sel[0].rotation_euler
+            servobase.location=sel[0].location
+
+
+            bpy.ops.object.select_all(action='DESELECT')
+            servobase.select_set(True)
+            bpy.context.view_layer.objects.active = servobase
+            #servobase
             bpy.ops.rigidbody.object_add()
             bpy.context.object.rigid_body.type = 'PASSIVE'
             bpy.context.object.rigid_body.mass = 1
@@ -1065,7 +1089,6 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.rigid_body.friction = 1
             bpy.context.object.rigid_body.use_margin = True
             bpy.context.object.rigid_body.collision_margin = 0
-
             bpy.ops.rigidbody.constraint_add()
             bpy.context.object.rigid_body_constraint.type = 'GENERIC'
             bpy.context.object.rigid_body_constraint.use_limit_ang_x = True #False is OK but... softlimiter
@@ -1089,12 +1112,13 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
             bpy.context.object.rigid_body_constraint.solver_iterations = 40
             bpy.context.object.rigid_body_constraint.object1 = servobase
+            bpy.context.object.rigid_body_constraint.object2 = servo            
+            #end servobase
 
-            bpy.ops.mesh.primitive_cube_add(size=0.5, enter_editmode=False, location=(0, 0, 0))
-            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-            bpy.ops.transform.translate(value=(-0.5, 0, 0), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, False, False), mirror=True, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False)
-            bpy.context.object.name = "servo"
-            servo=bpy.data.objects[bpy.context.object.name]
+            bpy.ops.object.select_all(action='DESELECT')
+            servo.select_set(True)
+            bpy.context.view_layer.objects.active = servo
+            #servo
             bpy.ops.rigidbody.object_add()
             bpy.context.object.rigid_body.mass = 0.5
             bpy.context.object.rigid_body.friction = 1
@@ -1106,6 +1130,16 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object['servoposition']=0.0 #actual pos
             bpy.context.object['_servolast']=0.0 # calculated last pos 
             bpy.context.object['_servobase']=0.0 # calculated 0, 360, 720 ... -360 -720 ...
+            bpy.ops.rigidbody.constraint_add()
+            bpy.context.object.rigid_body_constraint.type = 'MOTOR'
+            bpy.context.object.rigid_body_constraint.use_motor_ang = True
+            bpy.context.object.rigid_body_constraint.motor_ang_target_velocity = 1
+            bpy.context.object.rigid_body_constraint.motor_ang_max_impulse = 4
+            bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
+            bpy.context.object.rigid_body_constraint.solver_iterations = 40
+            bpy.context.object.rigid_body_constraint.object1 = servobase
+            bpy.context.object.rigid_body_constraint.object2 = servo
+            #end servo
 
             v = servo.driver_add('["servoposition"]')            
             v.driver.variables.new()
@@ -1128,31 +1162,13 @@ class prelisim_addhelper(bpy.types.Operator):
             v.driver.variables[0].targets[0].id=servo
             v.driver.variables[0].targets[0].data_path='["servolimitmax"]'
 
-            '''
-            t = v.driver.variables[0].targets[0]
-            t.id=servo
-            t.transform_space='WORLD_SPACE'
-            t.transform_type='ROT_X'            
-            '''
-            bpy.ops.rigidbody.constraint_add()
-            bpy.context.object.rigid_body_constraint.type = 'MOTOR'
-            bpy.context.object.rigid_body_constraint.use_motor_ang = True
-            bpy.context.object.rigid_body_constraint.motor_ang_target_velocity = 1
-            bpy.context.object.rigid_body_constraint.motor_ang_max_impulse = 4
-            bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
-            bpy.context.object.rigid_body_constraint.solver_iterations = 40
-            bpy.context.object.rigid_body_constraint.object1 = servobase
-            bpy.context.object.rigid_body_constraint.object2 = servo
+            
 
-            servobase.rigid_body_constraint.object2 = servo
+
+            
 
             servo['servoobj']=[servobase]
 
-            bpy.ops.object.select_all(action='DESELECT')
-            servo.select_set(True)
-            servobase.select_set(True)
-            bpy.context.view_layer.objects.active=servobase
-            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
 
             new_collection = make_collection("Servo"+str(helperindex), context.scene.collection)
             new_collection.objects.link(servobase)
