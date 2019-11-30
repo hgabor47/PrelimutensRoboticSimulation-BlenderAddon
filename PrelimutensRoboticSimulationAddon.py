@@ -56,6 +56,10 @@ execution_queue = queue.Queue()
 northpole=0
 compass=0
 runWithoutService = False
+servospeed=15 # 5 mean fast ... 33 mean slow positioning
+servostart=0.30
+_servostart=1-servostart
+servodeadzone=1 # in degree
 
 def ShowMessageBox(message = "", title = "Message Box", icon = 'INFO'):
 
@@ -66,6 +70,10 @@ def ShowMessageBox(message = "", title = "Message Box", icon = 'INFO'):
 
     bpy.context.window_manager.popup_menu(draw, title = title, icon = icon)
 
+def removekey(d,key):
+    r = dict(d)
+    del r[key]
+    return r
 
 def pos360(v,l,b):
     #value,last,base
@@ -130,7 +138,6 @@ def lightsensor(camera_name, pixel = 4):
     b=b/pixnum
     Lumi = (0.2126*r) + (0.7152*g) + (0.0722*b)    
     return Lumi,[r,g,b]
-
 
 def diffangle(ob1,ob2):
     axis = ob1.matrix_world.to_quaternion()
@@ -211,7 +218,6 @@ def clearcache(context):
         bpy.context.view_layer.objects.active=v
     bpy.ops.ptcache.free_bake_all()
 
-
 stopcycle=0
 class ModalTimerOperator(bpy.types.Operator):
     """Operator which runs its self from a timer"""
@@ -262,7 +268,6 @@ class ModalTimerOperator(bpy.types.Operator):
             play(context)
             bpy.ops.wm.modal_timer_operator()
         
-
 class ModalTimerRenderOperator(bpy.types.Operator):
     """Operator which runs its self from a timer"""
     bl_idname = "wm.modal_rendertimer_operator"
@@ -308,7 +313,6 @@ class ModalTimerRenderOperator(bpy.types.Operator):
             wm.event_timer_remove(bpy.types.Scene.prelisim_rendertimer_stop)
         bpy.types.Scene.prelisim_rendertimer_stop=None
 
-
 def play(context):
     if not context.screen.is_animation_playing:
         bpy.ops.screen.animation_play()   
@@ -320,8 +324,7 @@ def stop(context):
     bpy.context.scene.frame_current=1
     play(context)
     bpy.ops.wm.modal_timer_operator()
- 
-    
+  
 def setInfinity(context): 
     context.scene.frame_current=1
     context.scene.frame_start=1
@@ -331,7 +334,6 @@ def setInfinity(context):
     context.scene.frame_start=2
     context.scene.rigidbody_world.solver_iterations=14
     play(context)
-
 
 def add_variable():
     var = "prelisim_" + str(bpy.context.scene.prelisim_count_total).zfill(4)
@@ -443,7 +445,6 @@ class prelisim_generator(bpy.types.Operator):
         bpy.ops.wm.prelisim_timer_operator()    
         return {'FINISHED'}
 
-
 class prelisim_start(bpy.types.Operator):
     bl_idname="scene.prelisim_start"
     bl_label="Start Simulation"
@@ -485,8 +486,7 @@ class prelisim_start(bpy.types.Operator):
                              
         print('OK')
         return {'FINISHED'}
-    
-    
+     
 def eventframe(scene):
     #print('eventfr')    TUDAS:
     #bpy.context.view_layer.update() 
@@ -513,29 +513,41 @@ def eventframe(scene):
         pass
 
     try:              
-        if ((scene.frame_current % 3)==0):
+        if ((scene.frame_current % 2)==0):
             i=0              
             print('---')  
             for o in scene['servo']: 
-                print('Servo:'+o.name)               
-                i=i+1
-                if ((o['servoposition']%360)==0.0):
-                    if (abs(o.rigid_body_constraint.motor_ang_target_velocity)<0.01):
-                        print('speed up')
-                        o.rigid_body_constraint.motor_ang_target_velocity=0.1 # because if no speed than stucked in this pos        
-                    continue #0.0 mean Blender error so no calculated values randomly :(
-                base = pos360(o['servoposition'],o['_servolast'],o['_servobase'])
-                o['_servobase'] = base
-                v = o['servoposition']+o['_servobase']   #actual position
-                o['_servolast'] = v
-                dif = o['servoangle']-v
-                if (abs(dif)<0.4):
-                    o.rigid_body_constraint.motor_ang_target_velocity=0
-                else:
-                    if (dif<0):
-                        o.rigid_body_constraint.motor_ang_target_velocity=-min(3,(-dif/7))                    
-                    else:
-                        o.rigid_body_constraint.motor_ang_target_velocity=min(3,dif/7)
+                if o is None:
+                    removekey(scene['servo'],o.name)
+                    continue
+                if (o.name in bpy.data.collections['RigidBodyWorld'].objects):
+                    print('Servo:'+o.name)               
+                    i=i+1
+                    if ((o['servoposition']%360)==0.0):
+                        if abs(o['servoangle']-(o['_servolast']+o['_servobase']))<servodeadzone:
+                            print('dead')
+                            continue
+                        if (abs(o.rigid_body_constraint.motor_ang_target_velocity)<0.01):
+                            print('speed up')
+                            o.rigid_body_constraint.motor_ang_target_velocity=0.1 # because if no speed than stucked in this pos        
+                        print('no') 
+                        continue #0.0 mean Blender error so no calculated values randomly :(                                       
+                    base = pos360(o['servoposition'],o['_servolast'],o['_servobase'])
+                    o['_servobase'] = base
+                    v = o['servoposition']+o['_servobase']   #actual position
+                    o['_servolast'] = v
+                    dif = o['servoangle']-v
+                    print(dif)
+                    if (abs(dif)<servodeadzone):
+                        o.rigid_body_constraint.motor_ang_target_velocity=0
+                    else:                        
+                        vs=o.rigid_body_constraint.motor_ang_target_velocity
+                        if (dif<0):
+                            #o.rigid_body_constraint.motor_ang_target_velocity=-min(3,(-dif/servospeed))                    
+                            o.rigid_body_constraint.motor_ang_target_velocity=(vs*servostart)+((-min(3,(-dif/servospeed)))*_servostart)                    
+                        else:
+                            #o.rigid_body_constraint.motor_ang_target_velocity=min(3,dif/servospeed)
+                            o.rigid_body_constraint.motor_ang_target_velocity=(vs*servostart)+((min(3,(dif/servospeed)))*_servostart)                    
     except:
         print(sys.exc_info()[0])
         pass    
@@ -1238,6 +1250,8 @@ def initialize():
                 else:
                     if 'servoangle' in o:
                         print('Servo:'+o.name)
+                        o['_servolast']=0
+                        o['_servobase']=0
                         o['servo']=len(ser)
                         ser.append(o)
 
