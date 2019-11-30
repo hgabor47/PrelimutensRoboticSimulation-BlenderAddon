@@ -41,7 +41,7 @@ msg = dict()
 msg['noip'] = 'No IP address for device/service!'
 msg['badparam'] = 'Bad params from device/service!'
 msg['noanswer'] = 'Bad answer from device/service!'
-msg['norigibodies'] = 'Please check it: need least one rigid body and device/service connected to network'
+msg['norigidbodies'] = 'Please check it: need least one rigid body and device/service connected to network'
 msg['becauseblender'] = 'because Blender behaviours'
 
 
@@ -543,47 +543,47 @@ def eventframe(scene):
 
         
 
-'''    
-def eventpoke(scene):
-    if scene.frame_current == scene.frame_end:
-        print('-poke')
-        scene.frame_set(scene.frame_start+1)
-        #poke(bpy.context.view_layer.layer_collection)
-        
-def eventpeek(scene):
-    if scene.frame_current == scene.frame_start:
-        print('-peek')
-        #peek(bpy.context.view_layer.layer_collection)    
-def poke(layerColl): #poke(bpy.context.view_layer.layer_collection)
-    found = None
-    #print('-'+layerColl.collection.name)
-    for obj in layerColl.collection.objects:
-        try:
-            copy=obj.matrix_world.copy()
-            copyl=obj.matrix_local.copy()
-            obj['prelisim_mwc']=copy
-            obj['prelisim_mlc']=copyl
-            print(obj.name)
-        except:
-            pass
-    for layer in layerColl.children:
-        poke(layer)
-def peek(layerColl):
-    found = None
-    #print('-'+layerColl.collection.name)
-    for obj in layerColl.collection.objects:
-        try:
-            print(obj.name)
-            copy=Matrix(obj['prelisim_mwc'])            
-            copyl=Matrix(obj['prelisim_mwc'])            
-            if copy:
-                obj.matrix_world=copy
-                obj.matrix_local=copyl
-        except:
-            print('Err')
-            pass
-    for layer in layerColl.children: 
-        poke(layer)
+'''   # Commented out 
+    def eventpoke(scene):
+        if scene.frame_current == scene.frame_end:
+            print('-poke')
+            scene.frame_set(scene.frame_start+1)
+            #poke(bpy.context.view_layer.layer_collection)
+            
+    def eventpeek(scene):
+        if scene.frame_current == scene.frame_start:
+            print('-peek')
+            #peek(bpy.context.view_layer.layer_collection)    
+    def poke(layerColl): #poke(bpy.context.view_layer.layer_collection)
+        found = None
+        #print('-'+layerColl.collection.name)
+        for obj in layerColl.collection.objects:
+            try:
+                copy=obj.matrix_world.copy()
+                copyl=obj.matrix_local.copy()
+                obj['prelisim_mwc']=copy
+                obj['prelisim_mlc']=copyl
+                print(obj.name)
+            except:
+                pass
+        for layer in layerColl.children:
+            poke(layer)
+    def peek(layerColl):
+        found = None
+        #print('-'+layerColl.collection.name)
+        for obj in layerColl.collection.objects:
+            try:
+                print(obj.name)
+                copy=Matrix(obj['prelisim_mwc'])            
+                copyl=Matrix(obj['prelisim_mwc'])            
+                if copy:
+                    obj.matrix_world=copy
+                    obj.matrix_local=copyl
+            except:
+                print('Err')
+                pass
+        for layer in layerColl.children: 
+            poke(layer)
 '''
 def recurLayerCollection(layerColl, collName):
     found = None
@@ -1068,13 +1068,13 @@ class prelisim_addhelper(bpy.types.Operator):
 
             bpy.ops.rigidbody.constraint_add()
             bpy.context.object.rigid_body_constraint.type = 'GENERIC'
-            bpy.context.object.rigid_body_constraint.use_limit_ang_x = False
+            bpy.context.object.rigid_body_constraint.use_limit_ang_x = True #False is OK but... softlimiter
             bpy.context.object.rigid_body_constraint.use_limit_ang_y = True
             bpy.context.object.rigid_body_constraint.use_limit_ang_z = True
             bpy.context.object.rigid_body_constraint.use_limit_lin_x = True
             bpy.context.object.rigid_body_constraint.use_limit_lin_y = True
             bpy.context.object.rigid_body_constraint.use_limit_lin_z = True
-            bpy.context.object.rigid_body_constraint.limit_ang_x_lower = 0
+            bpy.context.object.rigid_body_constraint.limit_ang_x_lower = 0 # not working realtime and nor with driver
             bpy.context.object.rigid_body_constraint.limit_ang_x_upper = 0
             bpy.context.object.rigid_body_constraint.limit_ang_y_lower = 0
             bpy.context.object.rigid_body_constraint.limit_ang_y_upper = 0
@@ -1100,20 +1100,34 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.rigid_body.friction = 1
             bpy.context.object.rigid_body.use_margin = True
             bpy.context.object.rigid_body.collision_margin = 0
-            bpy.context.object['servolimitmin']=-30 
-            bpy.context.object['servolimitmax']=30
-            bpy.context.object['servoangle']=10   #need hold this position (run to this pos)
+            bpy.context.object['servolimitmin']=0 
+            bpy.context.object['servolimitmax']=120
+            bpy.context.object['servoangle']=30   #need hold this position (run to this pos)
             bpy.context.object['servoposition']=0.0 #actual pos
             bpy.context.object['_servolast']=0.0 # calculated last pos 
             bpy.context.object['_servobase']=0.0 # calculated 0, 360, 720 ... -360 -720 ...
 
             v = servo.driver_add('["servoposition"]')            
             v.driver.variables.new()
-            v.driver.variables[0].type='ROTATION_DIFF'
+            v.driver.variables[0].type='ROTATION_DIFF' #no negative value :( 
             v.driver.expression='degrees(var)'
             v.driver.variables[0].targets[0].id=servo
             v.driver.variables[0].targets[1].id=servobase
-            
+
+            v = servobase.driver_add('rigid_body_constraint.limit_ang_x_lower')          
+            v.driver.variables.new()
+            v.driver.variables[0].type='SINGLE_PROP' 
+            v.driver.expression='radians(var)'
+            v.driver.variables[0].targets[0].id=servo
+            v.driver.variables[0].targets[0].data_path='["servolimitmin"]'
+
+            v = servobase.driver_add('rigid_body_constraint.limit_ang_x_upper')          
+            v.driver.variables.new()
+            v.driver.variables[0].type='SINGLE_PROP' 
+            v.driver.expression='radians(var)'
+            v.driver.variables[0].targets[0].id=servo
+            v.driver.variables[0].targets[0].data_path='["servolimitmax"]'
+
             '''
             t = v.driver.variables[0].targets[0]
             t.id=servo
