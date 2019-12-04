@@ -521,15 +521,17 @@ def eventframe(scene):
                     removekey(scene['servo'],o.name)
                     continue
                 if (o.name in bpy.data.collections['RigidBodyWorld'].objects):
+                    esgen=o['servoobj'][1]
+                    esmotor=o['servoobj'][2]
                     print('Servo:'+o.name)               
                     i=i+1
                     if ((o['servoposition']%360)==0.0):
                         if abs(o['servoangle']-(o['_servolast']+o['_servobase']))<servodeadzone:
                             print('dead')
                             continue
-                        if (abs(o.rigid_body_constraint.motor_ang_target_velocity)<0.01):
+                        if (abs(esmotor.rigid_body_constraint.motor_ang_target_velocity)<0.01):
                             print('speed up')
-                            o.rigid_body_constraint.motor_ang_target_velocity=0.1 # because if no speed than stucked in this pos        
+                            esmotor.rigid_body_constraint.motor_ang_target_velocity=0.1 # because if no speed than stucked in this pos        
                         print('no') 
                         continue #0.0 mean Blender error so no calculated values randomly :(                                       
                     base = pos360(o['servoposition'],o['_servolast'],o['_servobase'])
@@ -539,15 +541,15 @@ def eventframe(scene):
                     dif = o['servoangle']-v
                     print(dif)
                     if (abs(dif)<servodeadzone):
-                        o.rigid_body_constraint.motor_ang_target_velocity=0
+                        esmotor.rigid_body_constraint.motor_ang_target_velocity=0
                     else:                        
-                        vs=o.rigid_body_constraint.motor_ang_target_velocity
+                        vs=esmotor.rigid_body_constraint.motor_ang_target_velocity
                         if (dif<0):
                             #o.rigid_body_constraint.motor_ang_target_velocity=-min(3,(-dif/servospeed))                    
-                            o.rigid_body_constraint.motor_ang_target_velocity=(vs*servostart)+((-min(3,(-dif/servospeed)))*_servostart)                    
+                            esmotor.rigid_body_constraint.motor_ang_target_velocity=(vs*servostart)+((-min(2,(-dif/servospeed)))*_servostart)                    
                         else:
                             #o.rigid_body_constraint.motor_ang_target_velocity=min(3,dif/servospeed)
-                            o.rigid_body_constraint.motor_ang_target_velocity=(vs*servostart)+((min(3,(dif/servospeed)))*_servostart)                    
+                            esmotor.rigid_body_constraint.motor_ang_target_velocity=(vs*servostart)+((min(2,(dif/servospeed)))*_servostart)                    
     except:
         print(sys.exc_info()[0])
         pass    
@@ -689,7 +691,7 @@ class prelisim_addhelper(bpy.types.Operator):
     bl_label="Add helper to Scene"    
 
     def execute(self,context):
-        global helperindex
+        global helperindex 
         global northpole
         global compass
         id=int(bpy.data.scenes['Scene'].prelisim_helper)
@@ -1059,17 +1061,33 @@ class prelisim_addhelper(bpy.types.Operator):
         if id == 7:
  ##### SERVO            
             print("TODO Servo")
-            sel = bpy.context.selected_objects
-            if ((sel==[]) or (sel[0].type!='EMPTY')):
-                ShowMessageBox(msg['needempty']) 
-                return {'FINISHED'}
+            # sel = bpy.context.selected_objects
+            # if ((sel==[]) or (sel[0].type!='EMPTY')):
+            #     ShowMessageBox(msg['needempty']) 
+            #     return {'FINISHED'}
             
             helperindex+=1
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
+            
+            bpy.ops.object.empty_add(type='SINGLE_ARROW', location=(0,0,0))
+            context.object.empty_display_size = 2
+            context.object.name = "E.S1Generic"                        
+            esgen=bpy.data.objects[bpy.context.object.name]
+
+            bpy.ops.object.empty_add(type='SINGLE_ARROW', location=(0,0,0))
+            context.object.empty_display_size = 2
+            context.object.name = "E.S2Motor"
+            
+            esmotor=bpy.data.objects[bpy.context.object.name]           
+
+            bpy.ops.object.empty_add(type='ARROWS', location=(0,0,0))
+            context.object.empty_display_size = 2
+            context.object.name = "E.S2base"
+            esbase=bpy.data.objects[bpy.context.object.name]           
 
             bpy.context.scene.cursor.location = [-0.5,0,0]
-
+            
             bpy.ops.mesh.primitive_cube_add(size=0.5, enter_editmode=False, location=(0, 0, 0))
             bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
             bpy.context.object.name = "servobase"
@@ -1084,11 +1102,13 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.ops.object.select_all(action='DESELECT')
             servo.select_set(True)
             servobase.select_set(True)
-            bpy.context.view_layer.objects.active=servobase
+            esmotor.select_set(True)
+            esgen.select_set(True)
+            esbase.select_set(True)
+            bpy.context.view_layer.objects.active=esbase #servobase
             bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
-            servobase.rotation_euler=sel[0].rotation_euler
-            servobase.location=sel[0].location
-
+            #servobase.rotation_euler=sel[0].rotation_euler
+            #servobase.location=sel[0].location
 
             bpy.ops.object.select_all(action='DESELECT')
             servobase.select_set(True)
@@ -1101,6 +1121,10 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.rigid_body.friction = 1
             bpy.context.object.rigid_body.use_margin = True
             bpy.context.object.rigid_body.collision_margin = 0
+
+            bpy.ops.object.select_all(action='DESELECT')
+            esgen.select_set(True)
+            bpy.context.view_layer.objects.active = esgen
             bpy.ops.rigidbody.constraint_add()
             bpy.context.object.rigid_body_constraint.type = 'GENERIC'
             bpy.context.object.rigid_body_constraint.use_limit_ang_x = True #False is OK but... softlimiter
@@ -1140,8 +1164,12 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object['servolimitmax']=120
             bpy.context.object['servoangle']=30   #need hold this position (run to this pos)
             bpy.context.object['servoposition']=0.0 #actual pos
+            bpy.context.object['servomaxspeed']=2.0 #max
             bpy.context.object['_servolast']=0.0 # calculated last pos 
             bpy.context.object['_servobase']=0.0 # calculated 0, 360, 720 ... -360 -720 ...
+            bpy.ops.object.select_all(action='DESELECT')
+            esmotor.select_set(True)
+            bpy.context.view_layer.objects.active = esmotor
             bpy.ops.rigidbody.constraint_add()
             bpy.context.object.rigid_body_constraint.type = 'MOTOR'
             bpy.context.object.rigid_body_constraint.use_motor_ang = True
@@ -1160,33 +1188,33 @@ class prelisim_addhelper(bpy.types.Operator):
             v.driver.variables[0].targets[0].id=servo
             v.driver.variables[0].targets[1].id=servobase
 
-            v = servobase.driver_add('rigid_body_constraint.limit_ang_x_lower')          
+            v = esgen.driver_add('rigid_body_constraint.limit_ang_x_lower')          
             v.driver.variables.new()
             v.driver.variables[0].type='SINGLE_PROP' 
             v.driver.expression='radians(var)'
             v.driver.variables[0].targets[0].id=servo
             v.driver.variables[0].targets[0].data_path='["servolimitmin"]'
 
-            v = servobase.driver_add('rigid_body_constraint.limit_ang_x_upper')          
+            v = esgen.driver_add('rigid_body_constraint.limit_ang_x_upper')          
             v.driver.variables.new()
             v.driver.variables[0].type='SINGLE_PROP' 
             v.driver.expression='radians(var)'
             v.driver.variables[0].targets[0].id=servo
             v.driver.variables[0].targets[0].data_path='["servolimitmax"]'
 
-            
-
-
-            
-
-            servo['servoobj']=[servobase]
-
+            servo['servoobj']=[servobase,esgen,esmotor]
 
             new_collection = make_collection("Servo"+str(helperindex), context.scene.collection)
             new_collection.objects.link(servobase)
             new_collection.objects.link(servo)
+            new_collection.objects.link(esbase)
+            new_collection.objects.link(esgen)
+            new_collection.objects.link(esmotor)
             context.scene.collection.objects.unlink(servo)
             context.scene.collection.objects.unlink(servobase)
+            context.scene.collection.objects.unlink(esbase)
+            context.scene.collection.objects.unlink(esgen)
+            context.scene.collection.objects.unlink(esmotor)
 
             
 
