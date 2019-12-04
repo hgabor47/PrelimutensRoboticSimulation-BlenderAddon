@@ -843,7 +843,16 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.rigid_body.friction = 1
             bpy.context.object.rigid_body.use_margin = True
             bpy.context.object.rigid_body.collision_margin = 0
-            
+
+            bpy.ops.object.empty_add(type='ARROWS', location=(0,0,0))
+            context.object.empty_display_size = 2
+            context.object.name = "E.W2base"
+            esbase=bpy.data.objects[bpy.context.object.name]           
+
+            bpy.ops.object.empty_add(type='SINGLE_ARROW', location=(0,0,0))
+            context.object.empty_display_size = 2
+            context.object.name = "E.W2Motor"
+            esmotor=bpy.data.objects[bpy.context.object.name]             
             bpy.ops.rigidbody.constraint_add()
             bpy.context.object.rigid_body_constraint.type = 'MOTOR'
             bpy.context.object.rigid_body_constraint.use_motor_ang = True
@@ -864,8 +873,6 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.rigid_body_constraint.disable_collisions = False
             bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
             bpy.context.object.rigid_body_constraint.solver_iterations = 40
-            bpy.context.object.rigid_body_constraint.object1 = wheel
-            bpy.context.object.rigid_body_constraint.object2 = wheelbase
             bpy.context.object.rigid_body_constraint.use_limit_ang_x = False
             bpy.context.object.rigid_body_constraint.use_limit_ang_y = True
             bpy.context.object.rigid_body_constraint.use_limit_ang_z = True
@@ -875,7 +882,6 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.rigid_body_constraint.limit_ang_y_upper = 0
             bpy.context.object.rigid_body_constraint.limit_ang_z_lower = 0
             bpy.context.object.rigid_body_constraint.limit_ang_z_upper = 0
-
             bpy.context.object.rigid_body_constraint.use_limit_lin_x = True
             bpy.context.object.rigid_body_constraint.use_limit_lin_y = True
             bpy.context.object.rigid_body_constraint.use_limit_lin_z = True
@@ -885,20 +891,28 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.rigid_body_constraint.limit_lin_y_upper = 0
             bpy.context.object.rigid_body_constraint.limit_lin_z_lower = 0
             bpy.context.object.rigid_body_constraint.limit_lin_z_upper = 0
-            bpy.context.object.hide_viewport = True
+            bpy.context.object.rigid_body_constraint.object1 = wheel
+            bpy.context.object.rigid_body_constraint.object2 = wheelbase            
+            #bpy.context.object.hide_viewport = True
 
             bpy.ops.object.select_all(action='DESELECT')
             wheel.select_set(True)
             wheelbase.select_set(True)
+            esmotor.select_set(True)
             e3.select_set(True)
-            bpy.context.view_layer.objects.active=wheelbase
+            esbase.select_set(True)
+            bpy.context.view_layer.objects.active=esbase
             bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
 
             new_collection = make_collection("MotorWheel"+str(helperindex), context.scene.collection)
             new_collection.objects.link(wheelbase)
             new_collection.objects.link(wheel)
+            new_collection.objects.link(esmotor)
+            new_collection.objects.link(esbase)
             new_collection.objects.link(e3)
             context.scene.collection.objects.unlink(e3)
+            context.scene.collection.objects.unlink(esbase)
+            context.scene.collection.objects.unlink(esmotor)
             context.scene.collection.objects.unlink(wheel)
             context.scene.collection.objects.unlink(wheelbase)
           
