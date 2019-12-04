@@ -513,9 +513,9 @@ def eventframe(scene):
         pass
 
     try:              
-        if ((scene.frame_current % 2)==0):
+        if ((scene.frame_current % 8)==0):
             i=0              
-            print('---')  
+            #print('---')  
             for o in scene['servo']: 
                 if o is None:
                     removekey(scene['servo'],o.name)
@@ -523,33 +523,37 @@ def eventframe(scene):
                 if (o.name in bpy.data.collections['RigidBodyWorld'].objects):
                     esgen=o['servoobj'][1]
                     esmotor=o['servoobj'][2]
-                    print('Servo:'+o.name)               
+                    opos = o['servoposition']                    
+                    olast = o['_servolast']                      
+                    obase = o['_servobase']
+                    oangle = o['servoangle']                    
+                    #print('Servo:'+o.name)               
                     i=i+1
-                    if ((o['servoposition']%360)==0.0):
-                        if abs(o['servoangle']-(o['_servolast']+o['_servobase']))<servodeadzone:
-                            print('dead')
+                    if ((opos%360)==0.0):
+                        if abs(oangle-(olast+obase))<servodeadzone:
+                            #print('dead')
                             continue
                         if (abs(esmotor.rigid_body_constraint.motor_ang_target_velocity)<0.01):
-                            print('speed up')
+                            #print('speed up')
                             esmotor.rigid_body_constraint.motor_ang_target_velocity=0.1 # because if no speed than stucked in this pos        
-                        print('no') 
-                        continue #0.0 mean Blender error so no calculated values randomly :(                                       
-                    base = pos360(o['servoposition'],o['_servolast'],o['_servobase'])
-                    o['_servobase'] = base
-                    v = o['servoposition']+o['_servobase']   #actual position
+                        #print('no') 
+                        continue #0.0 mean Blender error so no calculated values randomly :(   
+                    o['_servobase'] = pos360(opos,olast,obase)
+                    v = opos+o['_servobase']   #actual position
                     o['_servolast'] = v
-                    dif = o['servoangle']-v
-                    print(dif)
+                    dif = oangle-v
+                    
+                    #print(dif)
                     if (abs(dif)<servodeadzone):
                         esmotor.rigid_body_constraint.motor_ang_target_velocity=0
                     else:                        
                         vs=esmotor.rigid_body_constraint.motor_ang_target_velocity
                         if (dif<0):
                             #o.rigid_body_constraint.motor_ang_target_velocity=-min(3,(-dif/servospeed))                    
-                            esmotor.rigid_body_constraint.motor_ang_target_velocity=(vs*servostart)+((-min(2,(-dif/servospeed)))*_servostart)                    
+                            esmotor.rigid_body_constraint.motor_ang_target_velocity=(vs*servostart)+((-min(o['servomaxspeed'],(-dif/servospeed)))*_servostart)                    
                         else:
                             #o.rigid_body_constraint.motor_ang_target_velocity=min(3,dif/servospeed)
-                            esmotor.rigid_body_constraint.motor_ang_target_velocity=(vs*servostart)+((min(2,(dif/servospeed)))*_servostart)                    
+                            esmotor.rigid_body_constraint.motor_ang_target_velocity=(vs*servostart)+((min(o['servomaxspeed'],(dif/servospeed)))*_servostart)                    
     except:
         print(sys.exc_info()[0])
         pass    
@@ -1173,7 +1177,7 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.ops.rigidbody.constraint_add()
             bpy.context.object.rigid_body_constraint.type = 'MOTOR'
             bpy.context.object.rigid_body_constraint.use_motor_ang = True
-            bpy.context.object.rigid_body_constraint.motor_ang_target_velocity = 1
+            bpy.context.object.rigid_body_constraint.motor_ang_target_velocity = 0
             bpy.context.object.rigid_body_constraint.motor_ang_max_impulse = 4
             bpy.context.object.rigid_body_constraint.use_override_solver_iterations = True
             bpy.context.object.rigid_body_constraint.solver_iterations = 40
@@ -1281,6 +1285,13 @@ def initialize():
                         o['_servolast']=0
                         o['_servobase']=0
                         o['servo']=len(ser)
+                        try: ##version change : need to exists
+                            o['servomaxspeed']=o['servomaxspeed']
+                        except:
+                            o['servomaxspeed']=2.0
+                        print('.')
+                        o['servoobj'][2].rigid_body_constraint.motor_ang_target_velocity=0.0
+                        print(':')
                         ser.append(o)
 
     bpy.context.scene['switches']=sw
