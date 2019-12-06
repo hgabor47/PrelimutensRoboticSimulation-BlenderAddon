@@ -966,6 +966,7 @@ class prelisim_addhelper(bpy.types.Operator):
 
         if id==4:
  ####### AIRENGINE
+            fps = context.scene.render.fps
             helperindex+=1
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
@@ -988,7 +989,7 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.object.name = "airup"
             airup=bpy.data.objects[bpy.context.object.name]
             bpy.context.object.field.shape = 'LINE'
-            bpy.context.object.field.strength = 25
+            bpy.context.object.field.strength = fps+1  #not exactly why but it is a good approach
             bpy.context.object.field.flow = 0
             bpy.context.object.field.falloff_type = 'SPHERE'
             bpy.context.object.field.z_direction = 'POSITIVE'
