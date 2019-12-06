@@ -971,6 +971,10 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.view_layer.active_layer_collection = layerColl
 
             bpy.context.scene.cursor.location = [-0,0,0]
+            bpy.ops.object.empty_add(type='ARROWS', location=(0,0,0))
+            context.object.empty_display_size = 2
+            context.object.name = "E.S2base"
+            esbase=bpy.data.objects[bpy.context.object.name]   
 
             bpy.ops.mesh.primitive_cube_add(size=2, enter_editmode=False, location=(0, 0, 0.2))
             bpy.ops.transform.resize(value=(1, 1, 0.2))
@@ -1013,17 +1017,26 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.ops.object.select_all(action='DESELECT')
             airup.select_set(True)
             airdown.select_set(True)
+            esbase.select_set(True)
+            bpy.context.view_layer.objects.active=esbase
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+
+            bpy.ops.object.select_all(action='DESELECT')
+            esbase.select_set(True)
             airbase.select_set(True)
             bpy.context.view_layer.objects.active=airbase
             bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
-                        
+
+
             new_collection = make_collection("AirWheel"+str(helperindex), context.scene.collection)
             new_collection.objects.link(airbase)
             new_collection.objects.link(airup)
             new_collection.objects.link(airdown)
+            new_collection.objects.link(esbase)
             context.scene.collection.objects.unlink(airup)
             context.scene.collection.objects.unlink(airdown)
             context.scene.collection.objects.unlink(airbase)
+            context.scene.collection.objects.unlink(esbase)
         
         if id == 5 :
  #print('TODO:LightSensor')
