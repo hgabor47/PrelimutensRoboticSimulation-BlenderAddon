@@ -15,6 +15,7 @@ bl_info = {
     "category": "Mesh"}
 
 import sys
+import datetime
 import requests
 import threading
 import functools
@@ -51,7 +52,6 @@ IDdefault ='values2'
 Paramspath = '.params'
 Valuespath = ''
 killthread=False  #thread
-helperindex=1
 execution_queue = queue.Queue()
 northpole=0
 compass=0
@@ -88,8 +88,12 @@ def pos360(v,l,b):
 
 def min_dist(camera_name, rays_n=10):
     scene = bpy.context.scene
-    cam = bpy.data.cameras[camera_name]
     camo = bpy.data.objects[camera_name]
+    cam = camo.data #bpy.data.cameras[camera_name]
+    #camlo = camo.location 
+    camlo = camo.matrix_world.translation
+    #r = camo.rotation_euler
+    r = camo.matrix_world.to_euler('XYZ')
     view_layer = bpy.context.view_layer
     z = -cam.lens * 0.027778
     objs, ds = [], []
@@ -97,12 +101,11 @@ def min_dist(camera_name, rays_n=10):
         for j in range(rays_n + 1):
             x = -0.5 + i / rays_n
             y = 0.5 - j / rays_n
-            v = Vector((x, y, z))
-            r = camo.rotation_euler
-            v.rotate(r)            
-            result, location, normal, index, object, matrix = scene.ray_cast(view_layer, camo.location, v)
+            v = Vector((x, y, z))    
+            v.rotate(r)                                      
+            result, location, normal, index, object, matrix = scene.ray_cast(view_layer, camlo , v) #camo.location originaly
             if result:
-                d = Vector(camo.location) - Vector(location)
+                d = Vector(camlo) - Vector(location)
                 d = d.length
                 if object.name in objs:
                     if d < ds[objs.index(object.name)]:
@@ -508,8 +511,11 @@ def eventframe(scene):
                 o['distance']=v[0]
                 o['object']=v[1]
             except:
+                removekey(scene['distsensor'],o)
+                print('Dist error:'+o.name)
                 pass
     except:
+        print('Distance measure error:')
         pass
 
     try:              
@@ -695,13 +701,14 @@ class prelisim_addhelper(bpy.types.Operator):
     bl_label="Add helper to Scene"    
 
     def execute(self,context):
-        global helperindex 
         global northpole
         global compass
         id=int(bpy.data.scenes['Scene'].prelisim_helper)
+        cr = datetime.datetime.now() 
+        nametag=str(cr.day)+str(cr.hour)+str(cr.minute)+str(cr.second)
         if id==0: #CollisionSwitch
  ######COLLISIONSWITCH
-            helperindex+=1
+            
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
             
@@ -801,7 +808,7 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.view_layer.objects.active=base
             bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
 
-            new_collection = make_collection("Switch"+str(helperindex), context.scene.collection)
+            new_collection = make_collection("Switch"+nametag, context.scene.collection)
             new_collection.objects.link(base)
             new_collection.objects.link(e2)
             new_collection.objects.link(e1)
@@ -816,7 +823,7 @@ class prelisim_addhelper(bpy.types.Operator):
 
         if id==1:
  ###### MotorWheel
-            helperindex+=1
+            
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
 
@@ -904,7 +911,7 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.context.view_layer.objects.active=esbase
             bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
 
-            new_collection = make_collection("MotorWheel"+str(helperindex), context.scene.collection)
+            new_collection = make_collection("MotorWheel"+nametag, context.scene.collection)
             new_collection.objects.link(wheelbase)
             new_collection.objects.link(wheel)
             new_collection.objects.link(esmotor)
@@ -918,7 +925,7 @@ class prelisim_addhelper(bpy.types.Operator):
           
         if id==2: 
  ###### World with compass
-            helperindex+=1
+            
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
 
@@ -953,11 +960,13 @@ class prelisim_addhelper(bpy.types.Operator):
             
         if id==3:
  ####### DISTANCESENSOR
+            
             bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(0, 0, 0), rotation=(1.5708, 0,0))
-            bpy.context.object.name = "distsensor"
+            bpy.context.object.name = "distsensor"+nametag
             distsensor=bpy.data.objects[bpy.context.object.name]
-            l= len(bpy.data.cameras)-1
-            bpy.data.cameras[l].name = bpy.context.object.name
+            #l= len(bpy.data.cameras)-1            
+            #bpy.data.cameras[l].name = bpy.context.object.name
+            distsensor.data.name=bpy.context.object.name
             context.object['distance']=0.0            
             context.object['object']=''   
             bpy.context.object.data.lens = 150
@@ -967,7 +976,7 @@ class prelisim_addhelper(bpy.types.Operator):
         if id==4:
  ####### AIRENGINE
             fps = context.scene.render.fps
-            helperindex+=1
+            
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
 
@@ -1029,7 +1038,7 @@ class prelisim_addhelper(bpy.types.Operator):
             bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
 
 
-            new_collection = make_collection("AirWheel"+str(helperindex), context.scene.collection)
+            new_collection = make_collection("AirWheel"+nametag, context.scene.collection)
             new_collection.objects.link(airbase)
             new_collection.objects.link(airup)
             new_collection.objects.link(airdown)
@@ -1098,7 +1107,7 @@ class prelisim_addhelper(bpy.types.Operator):
             #     ShowMessageBox(msg['needempty']) 
             #     return {'FINISHED'}
             
-            helperindex+=1
+            
             layerColl = recurLayerCollection(bpy.context.view_layer.layer_collection, 'Master Collection')
             bpy.context.view_layer.active_layer_collection = layerColl
             
@@ -1236,7 +1245,7 @@ class prelisim_addhelper(bpy.types.Operator):
 
             servo['servoobj']=[servobase,esgen,esmotor]
 
-            new_collection = make_collection("Servo"+str(helperindex), context.scene.collection)
+            new_collection = make_collection("Servo"+nametag, context.scene.collection)
             new_collection.objects.link(servobase)
             new_collection.objects.link(servo)
             new_collection.objects.link(esbase)
@@ -1294,14 +1303,18 @@ def initialize():
     bpy.context.scene['distsensor']=dst
     bpy.context.scene['lightsensor']=lig
     bpy.context.scene['servo']=ser
-    for o in bpy.data.objects:        
+    for o in bpy.context.scene.objects: #bpy.data.objects:        
         if 'limitangle' in o:
             print('Switch: '+o.name)
             sw.append(o)
         else: 
             if 'distance' in o:
-                print('DistanceMeter: '+o.name)
-                dst.append(o)
+                try: 
+                    v = min_dist(o.name)
+                    dst.append(o)
+                    print('DistanceMeter tested: '+o.name)
+                except:
+                    pass
             else:
                 if 'lightsensor' in o:
                     print('LightSensor:'+o.name)
