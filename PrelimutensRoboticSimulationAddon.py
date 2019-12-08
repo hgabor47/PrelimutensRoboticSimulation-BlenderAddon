@@ -7,7 +7,7 @@
 bl_info = {
     "name": "Prelimutens Robotic",
     "author": "Gabor Horvath",
-    "version": (0, 32),
+    "version": (0, 40),
     "blender": (2, 80, 0),
     "location": "View3D > Pre.Rob ",
     "description": "Robotic simulation interface between a device (or service) and Blender systems",
