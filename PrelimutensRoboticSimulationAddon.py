@@ -160,14 +160,20 @@ def thread_function(name):
     ips = ip+'/'+ippath
     print(ips)
     while (maxi>0) and (not killthread):
-        time.sleep(1) 
+        time.sleep(0.4) 
         maxi-=1    
         payload={}
+
+        #TEST
+        scene.prelisim_0003 = scene['distsensor'][0]['distance']
+        scene.prelisim_0004 = scene['distsensor'][1]['distance']
+        #ENDTEST
+
         for item in bpy.types.Scene.prelisim:
             type=item["type"]
             name=item["name"]
             if name[0]=='I':
-                name=name[1:99]
+                #name=name[1:99]
                 if type == "boolean":          
                     exec('bpy.types.Scene.prelisimv=scene.{0}'.format(item["var_name"]))      
                     if bpy.types.Scene.prelisimv:
@@ -184,7 +190,7 @@ def thread_function(name):
                 #TODO !!! folytatni kell a többi típussal   
                     
                 
-        #print(payload)
+        print(payload)
         r = requests.get(ips,params=payload)
         y = json.loads(r.text)
         #print(y)
@@ -196,7 +202,7 @@ def thread_function(name):
             type=item["type"]
             name=item["name"]
             if name[0]=='O':
-                name=name[1:99]
+                #name=name[1:99]
                 try:
                     exec('bpy.types.Scene.prelisimv=y["'+name+'"]')
                     s='bpy.data.scenes["Scene"].{0}=bpy.types.Scene.prelisimv'.format(item["var_name"])
