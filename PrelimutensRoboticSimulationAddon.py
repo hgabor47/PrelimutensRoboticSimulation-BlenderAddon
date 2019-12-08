@@ -45,7 +45,9 @@ msg['noanswer'] = 'Bad answer from device/service!'
 msg['norigidbodies'] = 'Please check it: need least one rigid body and device/service connected to network'
 msg['becauseblender'] = 'because Blender behaviours'
 msg['needempty'] = 'Need only one selected and empty type object for reference!'
-
+msg['driverdesc'] = 'Not used if empty. Use it instead of BL-driver if it does not working properly.Example data for input from distance sensor: bpy.data.objects["distsensor.008"]["distance"]. For output simple example: bpy.data.objects["motor"].rigid_body_constraint.motor_ang_target_velocity. And you can use $x what is mean "output value" for example: bpy.data.objects["Motor"].rigid_body_constraint.motor_ang_target_velocity=3*$x'
+msg['to']='>>'
+msg['from']='<<'
 
 ipdefault='http://localhost:82/'
 IDdefault ='values2'
@@ -164,9 +166,9 @@ def thread_function(name):
         maxi-=1    
         payload={}
 
-        #TEST
-        scene.prelisim_0003 = scene['distsensor'][0]['distance']
-        scene.prelisim_0004 = scene['distsensor'][1]['distance']
+        #TEST driver
+        #scene.prelisim_0003 = scene['distsensor'][0]['distance']
+        #scene.prelisim_0004 = scene['distsensor'][1]['distance']
         #ENDTEST
 
         for item in bpy.types.Scene.prelisim:
@@ -174,6 +176,13 @@ def thread_function(name):
             name=item["name"]
             if name[0]=='I':
                 #name=name[1:99]
+                #Processing the attached drivers
+                exec('bpy.types.Scene.prelisimdrv=scene.{0}drv'.format(item["var_name"]))
+                if (bpy.types.Scene.prelisimdrv!=''):
+                    s='scene.{0}={1}'.format(item["var_name"],bpy.types.Scene.prelisimdrv)
+                    exec(s) 
+                #End Processing the attached drivers
+
                 if type == "boolean":          
                     exec('bpy.types.Scene.prelisimv=scene.{0}'.format(item["var_name"]))      
                     if bpy.types.Scene.prelisimv:
@@ -190,7 +199,7 @@ def thread_function(name):
                 #TODO !!! folytatni kell a többi típussal   
                     
                 
-        print(payload)
+        #print(payload)
         r = requests.get(ips,params=payload)
         y = json.loads(r.text)
         #print(y)
@@ -203,6 +212,17 @@ def thread_function(name):
             name=item["name"]
             if name[0]=='O':
                 #name=name[1:99]
+                #Processing the attached drivers
+                exec('bpy.types.Scene.prelisimdrv=scene.{0}drv'.format(item["var_name"]))
+                if (bpy.types.Scene.prelisimdrv!=''):
+                    s = bpy.types.Scene.prelisimdrv
+                    A = s.split('=')
+                    if (len(A)>1):
+                        s=A[0]+'='+A[1].replace('$x','scene.'+item["var_name"])
+                    else:
+                        s='{1}=scene.{0}'.format(item["var_name"],A[0])
+                    exec(s) 
+                #End Processing the attached drivers
                 try:
                     exec('bpy.types.Scene.prelisimv=y["'+name+'"]')
                     s='bpy.data.scenes["Scene"].{0}=bpy.types.Scene.prelisimv'.format(item["var_name"])
@@ -428,21 +448,25 @@ class prelisim_generator(bpy.types.Operator):
         
         for var_name, var, value in zip(list_var_name, jkeys, jvalues):
             #var=var[1:99]
+            dir=var[0:1]
             if type(value) == str:
                 if value == "boolean":
                     exec("bpy.types.Scene.{0}=BoolProperty(name='{1}')".format(var_name, var))  
-                    print(var_name)
+                    exec("bpy.types.Scene.{0}drv=StringProperty(description='{2}',name='{3}')".format(var_name, var,msg['driverdesc'],msg['from'] if dir=='I' else msg['to'])) 
 
                 elif value == "vector":
                     t = (0.0, 0.0, 0.0)
                     exec("bpy.types.Scene.{0}=FloatVectorProperty(name='{1}', default={2})".format(var_name, var,t))  
+                    exec("bpy.types.Scene.{0}drv=StringProperty(description='{2}',name='{3}')".format(var_name, var,msg['driverdesc'],msg['from'] if dir=='I' else msg['to'])) 
 
                 elif value == "float":
-                    exec("bpy.types.Scene.{0}=FloatProperty(name='{1}')".format(var_name, var))  
-                    
+                    exec("bpy.types.Scene.{0}=FloatProperty(name='{1}')".format(var_name, var)) 
+                    exec("bpy.types.Scene.{0}drv=StringProperty(description='{2}',name='{3}')".format(var_name, var,msg['driverdesc'],msg['from'] if dir=='I' else msg['to'])) 
+                    print(dir)
 
                 elif value == "string":
                     exec("bpy.types.Scene.{0}=StringProperty(name='{1}')".format(var_name, var))  
+                    exec("bpy.types.Scene.{0}drv=StringProperty(description='{2}',name='{3}')".format(var_name, var,msg['driverdesc'],msg['from'] if dir=='I' else msg['to'])) 
 
                 bpy.types.Scene.prelisim.append({"var_name":var_name,"name":var,"type":value})
 
@@ -1292,7 +1316,9 @@ class VIEW3D_PT_prelisim_panel_creator(bpy.types.Panel):
         column.operator("scene.prelisim_addhelper")
 
         for x in range(0, bpy.types.Scene.prelisim_count_total):
-            column.prop(context.scene,"prelisim_" + str(x).zfill(4))
+            row = column.row(align = True)
+            row.prop(context.scene,"prelisim_" + str(x).zfill(4))
+            row.prop(context.scene,"prelisim_" + str(x).zfill(4)+"drv")
         
         column.operator("scene.prelisim_start")
         column.operator("scene.prelisim_stop")
