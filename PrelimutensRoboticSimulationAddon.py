@@ -126,8 +126,8 @@ def lightsensor(camera_name, pixel = 4):
     bpy.context.scene.render.resolution_x = pixel
     bpy.context.scene.render.resolution_y = pixel
     bpy.context.scene.render.resolution_percentage = 100
-    bpy.context.scene.camera = bpy.data.objects[camera_name]
-    bpy.ops.render.render()        
+    bpy.context.scene.camera = bpy.data.objects[camera_name]    
+    bpy.ops.render.render()           
     pixels = list(bpy.data.images['Viewer Node'].pixels)
     
     r=0.0
@@ -199,10 +199,10 @@ def thread_function(name):
                 #TODO !!! folytatni kell a többi típussal   
                     
                 
-        #print(payload)
+        print(payload)
         r = requests.get(ips,params=payload)
         y = json.loads(r.text)
-        #print(y)
+        print(y)
         
         #logging.info(y["motL"])
         #bpy.data.objects["E.1M"].rigid_body_constraint.motor_ang_target_velocity=y["motL"]*speed
@@ -309,7 +309,9 @@ class ModalTimerRenderOperator(bpy.types.Operator):
             if context.screen.is_animation_playing:
                 try:                            
                     for o in context.scene['lightsensor']:     
-                        try:                                                         
+                        try:    
+                            if (o['parentname']!=''):
+                                o.matrix_world  = o['_parent'].matrix_world                                                                                     
                             l,rgb = lightsensor(o.name)
                             o['luminance']=l
                             o['R']=rgb[0]
@@ -1090,6 +1092,8 @@ class prelisim_addhelper(bpy.types.Operator):
             context.object['R']=1.0
             context.object['G']=1.0
             context.object['B']=1.0
+            context.object['luminance']=1.0  
+            context.object['parentname']=""
             lightsensor=bpy.data.objects[bpy.context.object.name]    
             bpy.context.object.data.type = 'ORTHO'
             bpy.context.object.data.ortho_scale = 1
@@ -1351,6 +1355,11 @@ def initialize():
                 if 'lightsensor' in o:
                     print('LightSensor:'+o.name)
                     o['lightsensor']=len(lig)
+                    try: ##version change : need to exists
+                        o['parentname']=o['parentname']
+                        o['_parent']=bpy.data.objects[o['parentname']]
+                    except:
+                        o['parentname']=""
                     lig.append(o)
                 else:
                     if 'servoangle' in o:
