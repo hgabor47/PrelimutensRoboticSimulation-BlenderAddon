@@ -156,6 +156,8 @@ def thread_function(name):
     killthread=False
     maxi=100000
     scene = bpy.data.scenes["Scene"]
+    SC = scene
+    OB = bpy.data.objects
     ip=scene.prelisim_ip
     ippath=scene.prelisim_ippath
     #ips='http://'+ip+':82'+ippath+'values'
@@ -180,7 +182,11 @@ def thread_function(name):
                 exec('bpy.types.Scene.prelisimdrv=scene.{0}drv'.format(item["var_name"]))
                 if (bpy.types.Scene.prelisimdrv!=''):
                     s='scene.{0}={1}'.format(item["var_name"],bpy.types.Scene.prelisimdrv)
-                    exec(s) 
+                    try:
+                        exec(s)
+                    except:
+                        print('DRV error:'+s)
+                        pass 
                 #End Processing the attached drivers
 
                 if type == "boolean":          
@@ -200,35 +206,38 @@ def thread_function(name):
                     
                 
         print(payload)
-        r = requests.get(ips,params=payload)
-        y = json.loads(r.text)
-        print(y)
-        
-        #logging.info(y["motL"])
-        #bpy.data.objects["E.1M"].rigid_body_constraint.motor_ang_target_velocity=y["motL"]*speed
-        #bpy.data.objects["E.2M"].rigid_body_constraint.motor_ang_target_velocity=y["motR"]*speed
-        for item in bpy.types.Scene.prelisim:
-            type=item["type"]
-            name=item["name"]
-            if name[0]=='O':
-                #name=name[1:99]
-                #Processing the attached drivers
-                exec('bpy.types.Scene.prelisimdrv=scene.{0}drv'.format(item["var_name"]))
-                if (bpy.types.Scene.prelisimdrv!=''):
-                    s = bpy.types.Scene.prelisimdrv
-                    A = s.split('=')
-                    if (len(A)>1):
-                        s=A[0]+'='+A[1].replace('$x','scene.'+item["var_name"])
-                    else:
-                        s='{1}=scene.{0}'.format(item["var_name"],A[0])
-                    exec(s) 
-                #End Processing the attached drivers
-                try:
-                    exec('bpy.types.Scene.prelisimv=y["'+name+'"]')
-                    s='bpy.data.scenes["Scene"].{0}=bpy.types.Scene.prelisimv'.format(item["var_name"])
-                    exec(s)
-                except:
-                    print("ERR:"+name)
+        try:
+            r = requests.get(ips,params=payload)
+            y = json.loads(r.text)
+            print(y)
+            
+            #logging.info(y["motL"])
+            #bpy.data.objects["E.1M"].rigid_body_constraint.motor_ang_target_velocity=y["motL"]*speed
+            #bpy.data.objects["E.2M"].rigid_body_constraint.motor_ang_target_velocity=y["motR"]*speed
+            for item in bpy.types.Scene.prelisim:
+                type=item["type"]
+                name=item["name"]
+                if name[0]=='O':
+                    #name=name[1:99]
+                    #Processing the attached drivers
+                    exec('bpy.types.Scene.prelisimdrv=scene.{0}drv'.format(item["var_name"]))
+                    if (bpy.types.Scene.prelisimdrv!=''):
+                        s = bpy.types.Scene.prelisimdrv
+                        A = s.split('=')
+                        if (len(A)>1):
+                            s=A[0]+'='+A[1].replace('$x','scene.'+item["var_name"])
+                        else:
+                            s='{1}=scene.{0}'.format(item["var_name"],A[0])
+                        exec(s) 
+                    #End Processing the attached drivers
+                    try:
+                        exec('bpy.types.Scene.prelisimv=y["'+name+'"]')
+                        s='bpy.data.scenes["Scene"].{0}=bpy.types.Scene.prelisimv'.format(item["var_name"])
+                        exec(s)
+                    except:
+                        print("ERR:"+name)
+        except:
+            pass
                 
         
     print('Thread End')
