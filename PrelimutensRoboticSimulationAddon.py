@@ -205,14 +205,11 @@ def thread_function(name):
                 #TODO !!! folytatni kell a többi típussal   
                     
                 
-        print(payload)
+        #print(payload)
         try:
             r = requests.get(ips,params=payload)
             y = json.loads(r.text)
-            print(y)
-            
             #logging.info(y["motL"])
-            #bpy.data.objects["E.1M"].rigid_body_constraint.motor_ang_target_velocity=y["motL"]*speed
             #bpy.data.objects["E.2M"].rigid_body_constraint.motor_ang_target_velocity=y["motR"]*speed
             for item in bpy.types.Scene.prelisim:
                 type=item["type"]
@@ -220,6 +217,7 @@ def thread_function(name):
                 if name[0]=='O':
                     #name=name[1:99]
                     #Processing the attached drivers
+                    bpy.types.Scene.prelisimdrv=""
                     exec('bpy.types.Scene.prelisimdrv=scene.{0}drv'.format(item["var_name"]))
                     if (bpy.types.Scene.prelisimdrv!=''):
                         s = bpy.types.Scene.prelisimdrv
@@ -228,7 +226,10 @@ def thread_function(name):
                             s=A[0]+'='+A[1].replace('$x','scene.'+item["var_name"])
                         else:
                             s='{1}=scene.{0}'.format(item["var_name"],A[0])
-                        exec(s) 
+                        try:   
+                            exec(s)
+                        except:                             
+                            print('-6'+s)
                     #End Processing the attached drivers
                     try:
                         exec('bpy.types.Scene.prelisimv=y["'+name+'"]')
@@ -237,6 +238,7 @@ def thread_function(name):
                     except:
                         print("ERR:"+name)
         except:
+            print("ERR:"+name)
             pass
                 
         
